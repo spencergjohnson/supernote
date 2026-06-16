@@ -46,3 +46,21 @@ auth:
   # Whether to allow remote password reset via email.
   # When disabled, the public password reset endpoint returns 403.
   enable_remote_password_reset: false
+
+# Local LLM mode (optional, fork feature)
+# Routes OCR, summaries, and embeddings to a local OpenAI-compatible server instead of Gemini.
+# When enabled, Gemini is disabled and the local_* values below are used.
+
+# Enable local LLM mode (set true to bypass Gemini).
+# local_mode: true
+
+# Base URL of your OpenAI-compatible inference server (e.g. llama-swap or Ollama).
+# Must expose /v1/chat/completions and /v1/embeddings. Use a port other than 8080 to
+# avoid conflicting with the Supernote server itself (which also defaults to 8080).
+# local_llm_url: http://localhost:8090
+
+# Model name used for OCR and summary chat completions (must be vision-capable for OCR).
+# local_llm_model: qwen2.5-vl-7b
+
+# Model name used for generating embeddings (semantic search).
+# local_embedding_model: nomic-embed-text

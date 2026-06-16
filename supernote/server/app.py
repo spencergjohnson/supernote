@@ -290,9 +290,14 @@ def create_app(config: ServerConfig) -> web.Application:
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
-    gemini_service = GeminiService(
-        config.gemini_api_key, max_concurrency=config.gemini_max_concurrency
-    )
+    if config.local_mode:
+        from .services.local_llm_service import LocalLLMService
+
+        gemini_service = LocalLLMService(config)
+    else:
+        gemini_service = GeminiService(
+            config.gemini_api_key, max_concurrency=config.gemini_max_concurrency
+        )
     app["gemini_service"] = gemini_service
 
     summary_service = SummaryService(user_service, session_manager)
@@ -310,22 +315,44 @@ def create_app(config: ServerConfig) -> web.Application:
     app["processor_service"] = processor_service
 
     # Register modules
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service),
-        ocr=GeminiOcrModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
-        ),
-        embedding=GeminiEmbeddingModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
-        ),
-        summary=SummaryModule(
-            file_service=file_service,
-            config=config,
-            gemini_service=gemini_service,
-            summary_service=summary_service,
-        ),
-    )
+    if config.local_mode:
+        from .services.processor_modules.local_ocr import LocalOcrModule
+        from .services.processor_modules.local_embedding import LocalEmbeddingModule
+        from .services.processor_modules.local_summary import LocalSummaryModule
+
+        processor_service.register_modules(
+            hashing=PageHashingModule(file_service=file_service),
+            png=PngConversionModule(file_service=file_service),
+            ocr=LocalOcrModule(
+                file_service=file_service, config=config, llm_service=gemini_service
+            ),
+            embedding=LocalEmbeddingModule(
+                file_service=file_service, config=config, llm_service=gemini_service
+            ),
+            summary=LocalSummaryModule(
+                file_service=file_service,
+                config=config,
+                llm_service=gemini_service,
+                summary_service=summary_service,
+            ),
+        )
+    else:
+        processor_service.register_modules(
+            hashing=PageHashingModule(file_service=file_service),
+            png=PngConversionModule(file_service=file_service),
+            ocr=GeminiOcrModule(
+                file_service=file_service, config=config, gemini_service=gemini_service
+            ),
+            embedding=GeminiEmbeddingModule(
+                file_service=file_service, config=config, gemini_service=gemini_service
+            ),
+            summary=SummaryModule(
+                file_service=file_service,
+                config=config,
+                gemini_service=gemini_service,
+                summary_service=summary_service,
+            ),
+        )
 
     # Register routes
     app.add_routes(system.routes)

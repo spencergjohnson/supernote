@@ -137,6 +137,30 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
+    local_mode: bool = False
+    """Enable local LLM mode, disables Gemini.
+
+    Env Var: `SUPERNOTE_LOCAL_MODE`
+    """
+
+    local_llm_url: str = "http://localhost:8080"
+    """Base URL for local OpenAI-compatible inference server.
+
+    Env Var: `SUPERNOTE_LOCAL_LLM_URL`
+    """
+
+    local_llm_model: str = "qwen2.5-vl-7b"
+    """Model name to pass in local chat completions requests.
+
+    Env Var: `SUPERNOTE_LOCAL_LLM_MODEL`
+    """
+
+    local_embedding_model: str = "nomic-embed-text"
+    """Model name to pass in local embedding requests.
+
+    Env Var: `SUPERNOTE_LOCAL_EMBEDDING_MODEL`
+    """
+
     @property
     def base_url(self) -> str:
         """Get the base URL for the main server.
@@ -296,6 +320,22 @@ BaseConfig
                 )
             except ValueError:
                 pass
+
+        if os.getenv("SUPERNOTE_LOCAL_MODE"):
+            config.local_mode = _get_bool_env("SUPERNOTE_LOCAL_MODE", config.local_mode)
+            logger.info(f"Local LLM Mode Enabled: {config.local_mode}")
+
+        if local_llm_url := os.getenv("SUPERNOTE_LOCAL_LLM_URL"):
+            config.local_llm_url = local_llm_url
+            logger.info(f"Using SUPERNOTE_LOCAL_LLM_URL: {config.local_llm_url}")
+
+        if local_llm_model := os.getenv("SUPERNOTE_LOCAL_LLM_MODEL"):
+            config.local_llm_model = local_llm_model
+            logger.info(f"Using SUPERNOTE_LOCAL_LLM_MODEL: {config.local_llm_model}")
+
+        if local_embedding_model := os.getenv("SUPERNOTE_LOCAL_EMBEDDING_MODEL"):
+            config.local_embedding_model = local_embedding_model
+            logger.info(f"Using SUPERNOTE_LOCAL_EMBEDDING_MODEL: {config.local_embedding_model}")
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

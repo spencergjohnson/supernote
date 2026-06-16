@@ -89,6 +89,47 @@ You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 > [!TIP]
 > **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
 
+## Local LLM Mode
+
+By default the synthesis engine uses Google Gemini, but you can run the **entire** pipeline—OCR, summaries, and semantic search embeddings—against your own OpenAI-compatible inference server instead. This keeps every page of your handwriting on your own hardware and means **no API key is required**, at the cost of providing the compute yourself.
+
+### Prerequisites
+
+Any inference server that exposes the standard OpenAI endpoints (`POST /v1/chat/completions` and `POST /v1/embeddings`) works out of the box, including [llama-swap](https://github.com/mostlygeek/llama-swap), [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), and [vLLM](https://github.com/vllm-project/vllm). You will need two models available: a **vision-capable** chat model for OCR and summaries (e.g. `qwen2.5-vl-7b`, `llava`) and an embedding model for semantic search (e.g. `nomic-embed-text`, `mxbai-embed-large`).
+
+### Configuration
+
+Local mode is controlled by four settings. Each can be set as an environment variable or in `config.yaml`; environment variables take precedence.
+
+| Environment Variable | Config Key | Description |
+|----------------------|------------|-------------|
+| `SUPERNOTE_LOCAL_MODE` | `local_mode` | Set to `true` to enable local mode and disable Gemini. |
+| `SUPERNOTE_LOCAL_LLM_URL` | `local_llm_url` | Base URL of your OpenAI-compatible server. Use a port other than `8080`. |
+| `SUPERNOTE_LOCAL_LLM_MODEL` | `local_llm_model` | Model name for chat completions. **Must be vision-capable** for OCR. |
+| `SUPERNOTE_LOCAL_EMBEDDING_MODEL` | `local_embedding_model` | Model name for semantic search embeddings. |
+
+### Quick Start
+
+```bash
+# Option A: llama-swap (hot-swaps llama.cpp models on :8090)
+llama-swap --config llama-swap-config.yaml --port 8090
+export SUPERNOTE_LOCAL_LLM_URL=http://localhost:8090
+export SUPERNOTE_LOCAL_LLM_MODEL=qwen2.5-vl-7b
+
+# Option B: Ollama (OpenAI-compatible API on :11434)
+ollama pull llava && ollama pull nomic-embed-text
+export SUPERNOTE_LOCAL_LLM_URL=http://localhost:11434
+export SUPERNOTE_LOCAL_LLM_MODEL=llava
+
+# Then enable local mode and serve (shared by both options)
+export SUPERNOTE_LOCAL_MODE=true
+export SUPERNOTE_LOCAL_EMBEDDING_MODEL=nomic-embed-text
+supernote serve
+```
+
+> [!TIP]
+> OCR requires a **vision-capable** model (one that accepts `image_url` content parts). Text-only models will not transcribe handwritten pages, though they can still be used as the embedding model.
+
 ## Features Deep Dive
 
 - **Official Protocol Compatibility**: Implements the official **Supernote Private Cloud** protocol for seamless device synchronization. While Ratta's official service provides a robust and managed sync experience, this project allows for local data ownership and custom background processing.
