@@ -194,19 +194,38 @@ fi
 TS_URL=""
 if [ "$TS_ENABLED" = "1" ]; then
   log "Configuring 'tailscale serve' to expose the web UI over HTTPS ..."
-  # Map https://<node>.ts.net/  ->  http://127.0.0.1:${PORT} (this host's port).
-  # --bg persists the mapping in the background across restarts. Re-running
-  # overwrites the "/" mount, so this is idempotent.
-  if serve_err="$(tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}" 2>&1)"; then
+
+  # `tailscale serve` usually needs root (or an operator set via
+  # `tailscale set --operator=$USER`). Auto-elevate with PASSWORDLESS sudo only
+  # (`-n`), so the script never blocks on a sudo password prompt.
+  TS=(tailscale)
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    TS=(sudo -n tailscale)
+  fi
+
+  # Wrap in `timeout` so a stuck step (most often first-time TLS cert issuance
+  # when tailnet HTTPS isn't enabled yet) can NEVER freeze this script.
+  RUN=()
+  command -v timeout >/dev/null 2>&1 && RUN=(timeout 60)
+
+  # Map https://<node>.ts.net/ -> http://127.0.0.1:${PORT}. --bg persists the
+  # mapping; re-running overwrites the "/" mount, so this is idempotent.
+  # Capture rc without tripping `set -e` (failing cmd is left of `||`).
+  serve_err="$("${RUN[@]}" "${TS[@]}" serve --bg --https=443 "http://127.0.0.1:${PORT}" 2>&1)" \
+    && serve_rc=0 || serve_rc=$?
+
+  if [ "${serve_rc:-1}" -eq 0 ]; then
     TS_URL="https://${TS_DNS}"
     log "Web UI now served over HTTPS at ${TS_URL}"
   else
-    warn "tailscale serve failed; continuing with LAN HTTP only."
-    warn "Reason: ${serve_err}"
-    case "$serve_err" in
-      *[Hh][Tt][Tt][Pp][Ss]*|*[Cc]ert*)
-        warn "Enable HTTPS for your tailnet: admin console -> DNS -> 'Enable HTTPS', then re-run." ;;
-    esac
+    warn "tailscale serve did not complete (exit ${serve_rc}); continuing with LAN HTTP only."
+    if [ "${serve_rc}" -eq 124 ]; then
+      warn "It TIMED OUT. Most likely tailnet HTTPS isn't enabled yet (cert issuance hangs)."
+    fi
+    [ -n "$serve_err" ] && warn "Output: ${serve_err}"
+    warn "To fix: 1) admin console -> DNS -> 'Enable HTTPS'."
+    warn "        2) permissions: 'sudo tailscale set --operator=\$USER' (or run this script with sudo)."
+    warn "        3) re-run ./run-local.sh"
   fi
 fi
 
