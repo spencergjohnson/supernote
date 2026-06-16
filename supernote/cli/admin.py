@@ -5,47 +5,64 @@ import getpass
 import hashlib
 import sys
 
+from supernote.client import Supernote
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
 
-from .client import create_session
+from .client import create_session, load_cached_auth
 
 
 async def add_user_async(
     url: str, email: str, password: str, display_name: str | None = None
 ):
-    """Async implementation of add user."""
-    async with create_session(url) as session:
-        print(f"Attempting to register user '{email}' on {url}...")
+    """Async implementation of add user.
 
+    The first user on a fresh server is created via public (unauthenticated)
+    registration and automatically becomes the admin. Once users exist, public
+    registration closes, so we fall back to the authenticated admin API which
+    requires cached credentials from a prior ``supernote cloud login``.
+    """
+    password_md5 = hashlib.md5(password.encode()).hexdigest()
+
+    # 1) Bootstrap path: public registration with an UNauthenticated client.
+    #    The first user needs no credentials, so we must not attach a token
+    #    (doing so fails with "No access token found" before reaching the server).
+    print(f"Attempting to register user '{email}' on {url}...")
+    async with Supernote(host=url) as session:
         admin_client = AdminClient(session.client)
-
-        # Hash password
-        password_md5 = hashlib.md5(password.encode()).hexdigest()
-
-        # Try Public Registration
         try:
             await admin_client.register(
                 email=email,
                 password=password_md5,
                 username=display_name,
             )
-            print("Success! User created (Public Registration).")
+            print("Success! User created (public registration / first-user bootstrap).")
             return
-        except ApiException:
-            # If failed, we don't have detailed status code in simple try/except unless we check exception type
-            # But client raises ApiException
-            pass
+        except ApiException as err:
+            print(f"Public registration unavailable: {err}")
 
-        # Try Admin Creation API
-        print("Public registration failed or disabled. Attempting Admin creation...")
+    # 2) Registration is closed (users already exist). Use the admin API, which
+    #    requires you to be logged in as an existing admin.
+    print("Falling back to authenticated admin creation...")
+    auth, resolved_url = load_cached_auth(url)
+    try:
+        await auth.async_get_access_token()
+    except ValueError:
+        print(
+            "No admin credentials found. Log in as an existing admin first:\n"
+            f"  supernote cloud login <admin-email> --url {url}"
+        )
+        sys.exit(1)
+
+    async with Supernote.from_auth(auth, host=resolved_url) as session:
+        admin_client = AdminClient(session.client)
         try:
             await admin_client.admin_create_user(
                 email=email,
                 password=password_md5,
                 username=display_name,
             )
-            print("Success! User created (Admin API).")
+            print("Success! User created (admin API).")
         except Exception as e:
             print(f"Admin creation failed: {e}")
             sys.exit(1)

@@ -85,6 +85,12 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   docker rm -f "$CONTAINER_NAME" >/dev/null
 fi
 
+# NOTE: SUPERNOTE_BASE_URL / SUPERNOTE_MCP_BASE_URL are the MCP OAuth issuer URLs.
+# The MCP SDK rejects any non-HTTPS issuer unless the host is localhost/127.0.0.1,
+# so we keep these on localhost. They are NOT used for device sync or the web UI
+# (those use the LAN address you connect to directly), so LAN access is unaffected.
+# Exposing MCP to remote agents over the LAN would require terminating HTTPS via a
+# reverse proxy and pointing these at that https:// URL.
 log "Starting container '$CONTAINER_NAME' in LOCAL AI mode ..."
 docker run -d \
   --name "$CONTAINER_NAME" \
@@ -94,8 +100,8 @@ docker run -d \
   -p "${MCP_PORT}:8081" \
   -v "${DATA_DIR}:/data" \
   -e SUPERNOTE_JWT_SECRET="$JWT_SECRET" \
-  -e SUPERNOTE_BASE_URL="http://${LAN_IP}:${PORT}" \
-  -e SUPERNOTE_MCP_BASE_URL="http://${LAN_IP}:${MCP_PORT}" \
+  -e SUPERNOTE_BASE_URL="http://localhost:${PORT}" \
+  -e SUPERNOTE_MCP_BASE_URL="http://localhost:${MCP_PORT}" \
   -e SUPERNOTE_LOCAL_MODE=true \
   -e SUPERNOTE_LOCAL_LLM_URL="$LLM_URL" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="$LLM_MODEL" \
@@ -127,7 +133,7 @@ $(printf '\033[1;32m')Supernote Knowledge Hub is running (LOCAL AI mode).$(print
 --------------------------------------------------------------------------
   On this machine : http://localhost:${PORT}
   From your LAN   : http://${LAN_IP}:${PORT}
-  MCP (AI agents) : http://${LAN_IP}:${MCP_PORT}/mcp
+  MCP (AI agents) : http://localhost:${MCP_PORT}/mcp  (local only; remote MCP needs HTTPS)
 
 --------------------------------------------------------------------------
 2) Create your admin account (first user becomes admin)
@@ -137,7 +143,7 @@ $(printf '\033[1;32m')Supernote Knowledge Hub is running (LOCAL AI mode).$(print
   and unrelated to the host port ${PORT} you use from a browser/device):
 
     docker exec -it $CONTAINER_NAME \\
-      supernote admin user add you@example.com --url http://localhost:8080
+      supernote admin --url http://localhost:8080 user add you@example.com
 
 --------------------------------------------------------------------------
 3) Connect your Supernote device

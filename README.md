@@ -55,7 +55,7 @@ supernote serve
 
 ```bash
 # Create the initial admin account
-supernote admin user add you@example.com --url http://localhost:8080
+supernote admin --url http://localhost:8080 user add you@example.com
 
 # Authenticate your CLI
 supernote cloud login you@example.com --url http://localhost:8080
@@ -197,10 +197,10 @@ docker run -d \
   -p 8080:8080 -p 8081:8081 \
   -v "$(pwd)/data:/data" \
   -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
-  -e SUPERNOTE_BASE_URL="http://<your-lan-ip>:8080" \
+  -e SUPERNOTE_BASE_URL="http://localhost:8080" \
   -e SUPERNOTE_LOCAL_MODE=true \
-  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:11434" \
-  -e SUPERNOTE_LOCAL_LLM_MODEL="llava" \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
+  -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
   -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
   supernote
 ```
@@ -210,12 +210,18 @@ docker run -d \
 > command already starts the server, so do **not** append `serve`. Setting a fixed
 > `SUPERNOTE_JWT_SECRET` keeps your device logged in across restarts. The chat model
 > must be **vision-capable** for OCR.
+>
+> Keep `SUPERNOTE_BASE_URL` on `localhost` (not your LAN IP): it's the MCP OAuth
+> issuer, and the MCP SDK rejects a non-HTTPS issuer unless the host is `localhost`.
+> It does not affect the web UI or device sync, which use the address you connect to
+> directly. `SUPERNOTE_LOCAL_LLM_URL` assumes llama-swap on the host at `:8080`
+> (reached via `host.docker.internal`); use `:11434`/`llava` for Ollama.
 
 Then create your admin user and connect the device:
 
 ```bash
 docker exec -it supernote-server \
-  supernote admin user add you@example.com --url http://localhost:8080
+  supernote admin --url http://localhost:8080 user add you@example.com
 ```
 
 On the Supernote: **Settings > Sync > Private Cloud**, enter `http://<your-lan-ip>:8080`,

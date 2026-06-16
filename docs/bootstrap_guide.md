@@ -35,7 +35,7 @@ Since no users exist yet, you can register the first user from any client (inclu
 
 ```bash
 # Replace with your email
-supernote admin user add your-email@example.com --url http://localhost:8080
+supernote admin --url http://localhost:8080 user add your-email@example.com
 ```
 
 You will be prompted to enter a password. Upon success, this user is now the system administrator.

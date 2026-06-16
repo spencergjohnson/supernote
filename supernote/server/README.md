@@ -72,10 +72,10 @@ docker run -d \
   -p 8080:8080 -p 8081:8081 \
   -v "$(pwd)/data:/data" \
   -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
-  -e SUPERNOTE_BASE_URL="http://<your-lan-ip>:8080" \
+  -e SUPERNOTE_BASE_URL="http://localhost:8080" \
   -e SUPERNOTE_LOCAL_MODE=true \
-  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:11434" \
-  -e SUPERNOTE_LOCAL_LLM_MODEL="llava" \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
+  -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
   -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
   supernote
 ```
@@ -86,6 +86,12 @@ the server runs inside the container, reach a service on the host via
 be **vision-capable** for OCR. A fixed `SUPERNOTE_JWT_SECRET` keeps your device logged
 in across restarts.
 
+Keep `SUPERNOTE_BASE_URL` on `localhost` rather than your LAN IP. It is the MCP OAuth
+issuer URL, and the MCP SDK rejects a non-HTTPS issuer unless the host is
+`localhost`/`127.0.0.1` (you'll otherwise get `ValueError: Issuer URL must be HTTPS`
+on startup). This setting does not affect the web UI or device sync, which use the
+address you connect to directly.
+
 ### Connecting Your Device
 
 1. Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
@@ -93,7 +99,7 @@ in across restarts.
 3. Create your admin user (first user becomes admin):
    ```bash
    docker exec -it supernote-server \
-     supernote admin user add you@example.com --url http://localhost:8080
+     supernote admin --url http://localhost:8080 user add you@example.com
    ```
 4. On your Supernote device, go to **Settings** > **Sync** > **Supernote Cloud**.
 5. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8080`).
