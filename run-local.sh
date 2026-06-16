@@ -72,6 +72,48 @@ fi
 JWT_SECRET="$(cat "$SECRET_FILE")"
 
 # ---------------------------------------------------------------------------
+# Self-signed TLS certificate (so the web UI is served over HTTPS).
+#
+# The browser's Web Crypto API (used to hash passwords at login) is only
+# available in a "secure context": HTTPS, or http://localhost. Over plain HTTP
+# to a LAN IP it is disabled, which is why LAN logins failed. Serving HTTPS
+# fixes that and encrypts traffic. The cert covers localhost, 127.0.0.1 and the
+# detected LAN IP; add more names/IPs via CERT_EXTRA_SANS (comma-separated).
+# ---------------------------------------------------------------------------
+CERT_DIR="$DATA_DIR/config/certs"
+CERT_FILE="$CERT_DIR/server.crt"
+KEY_FILE="$CERT_DIR/server.key"
+CERT_EXTRA_SANS="${CERT_EXTRA_SANS:-}"
+mkdir -p "$CERT_DIR"
+if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+  command -v openssl >/dev/null 2>&1 || die "openssl is required to generate the TLS certificate."
+  log "Generating self-signed TLS certificate at $CERT_DIR (valid 10 years)"
+  SANS="DNS:localhost,IP:127.0.0.1"
+  [ "$LAN_IP" != "127.0.0.1" ] && SANS="${SANS},IP:${LAN_IP}"
+  if [ -n "$CERT_EXTRA_SANS" ]; then
+    IFS=',' read -ra _extra <<< "$CERT_EXTRA_SANS"
+    for san in "${_extra[@]}"; do
+      san="$(printf '%s' "$san" | xargs)"  # trim whitespace
+      [ -z "$san" ] && continue
+      if printf '%s' "$san" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        SANS="${SANS},IP:${san}"
+      else
+        SANS="${SANS},DNS:${san}"
+      fi
+    done
+  fi
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$KEY_FILE" -out "$CERT_FILE" -days 3650 \
+    -subj "/CN=supernote.local" \
+    -addext "subjectAltName=${SANS}" >/dev/null 2>&1
+  chmod 600 "$KEY_FILE"
+fi
+# Paths as seen from inside the container ($DATA_DIR is mounted at /data).
+CONTAINER_CERT_FILE="/data/config/certs/server.crt"
+CONTAINER_KEY_FILE="/data/config/certs/server.key"
+INTERNAL_HTTP_PORT="${INTERNAL_HTTP_PORT:-8079}"  # loopback-only, in-container
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 log "Building image '$IMAGE_NAME' ..."
@@ -100,7 +142,10 @@ docker run -d \
   -p "${MCP_PORT}:8081" \
   -v "${DATA_DIR}:/data" \
   -e SUPERNOTE_JWT_SECRET="$JWT_SECRET" \
-  -e SUPERNOTE_BASE_URL="http://localhost:${PORT}" \
+  -e SUPERNOTE_TLS_CERT_FILE="$CONTAINER_CERT_FILE" \
+  -e SUPERNOTE_TLS_KEY_FILE="$CONTAINER_KEY_FILE" \
+  -e SUPERNOTE_INTERNAL_HTTP_PORT="$INTERNAL_HTTP_PORT" \
+  -e SUPERNOTE_BASE_URL="https://localhost:${PORT}" \
   -e SUPERNOTE_MCP_BASE_URL="http://localhost:${MCP_PORT}" \
   -e SUPERNOTE_LOCAL_MODE=true \
   -e SUPERNOTE_LOCAL_LLM_URL="$LLM_URL" \
@@ -129,31 +174,39 @@ $(printf '\033[1;32m')Supernote Knowledge Hub is running (LOCAL AI mode).$(print
   Logs      : docker logs -f $CONTAINER_NAME
 
 --------------------------------------------------------------------------
-1) Open the Web UI
+1) Open the Web UI (now over HTTPS)
 --------------------------------------------------------------------------
-  On this machine : http://localhost:${PORT}
-  From your LAN   : http://${LAN_IP}:${PORT}
+  On this machine : https://localhost:${PORT}
+  From your LAN   : https://${LAN_IP}:${PORT}
   MCP (AI agents) : http://localhost:${MCP_PORT}/mcp  (local only; remote MCP needs HTTPS)
+
+  The certificate is self-signed, so the browser will show a one-time
+  "Your connection is not private" warning. Click "Advanced" > "Proceed".
+  After that, login works (HTTPS enables the Web Crypto API the login uses).
 
 --------------------------------------------------------------------------
 2) Create your admin account (first user becomes admin)
 --------------------------------------------------------------------------
   Run this once, then enter a password when prompted. The command runs INSIDE
-  the container, so it targets the container's own port 8080 (this is correct
-  and unrelated to the host port ${PORT} you use from a browser/device):
+  the container and targets the loopback-only plain-HTTP port ${INTERNAL_HTTP_PORT}
+  (so it skips the self-signed cert; this port is never exposed on the LAN):
 
     docker exec -it $CONTAINER_NAME \\
-      supernote admin --url http://localhost:8080 user add you@example.com
+      supernote admin --url http://localhost:${INTERNAL_HTTP_PORT} user add you@example.com
 
 --------------------------------------------------------------------------
 3) Connect your Supernote device
 --------------------------------------------------------------------------
   Make sure the device is on the same Wi-Fi/LAN as this machine, then:
     a. Settings > Sync > Private Cloud (custom server)
-    b. Server address : http://${LAN_IP}:${PORT}
+    b. Server address : https://${LAN_IP}:${PORT}
     c. Log in with the email + password from step 2
     d. Tap Sync, then choose folders to sync under
        Settings > Drive > Private Cloud (e.g. Note, Document, EXPORT)
+
+  Note: some Supernote firmware may not accept a self-signed certificate. If
+  device sync fails to connect, you may need a cert trusted by the device
+  (e.g. via a reverse proxy with a CA the device trusts).
 
 --------------------------------------------------------------------------
 Notes
