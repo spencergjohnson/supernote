@@ -169,13 +169,57 @@ notebook.to_pdf("output.pdf")
 
 The notebook parser is a fork and slightly lighter dependency version of [supernote-tool](https://github.com/jya-dev/supernote-tool). All credit goes to the original authors for providing an amazing low-level utility.
 
-### Run with Docker
+### Run with Docker (Local AI mode)
+
+The quickest way to build, run, and get LAN + device connection instructions is the
+helper script, which runs entirely in **Local LLM mode** (your own inference server,
+no Gemini, no API key):
 
 ```bash
-# Build & Run server
-docker build -t supernote .
-docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
+# Defaults to an Ollama server on the host (:11434).
+# Override the inference server with LLM_URL / LLM_MODEL / EMBEDDING_MODEL.
+./run-local.sh
 ```
+
+It builds the image, starts the container bound to your LAN, persists a JWT secret,
+and prints the Web UI URL plus the steps to create your admin user and connect the
+device.
+
+To do it by hand instead:
+
+```bash
+docker build -t supernote .
+
+docker run -d \
+  --name supernote-server \
+  --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
+  -p 8080:8080 -p 8081:8081 \
+  -v "$(pwd)/data:/data" \
+  -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
+  -e SUPERNOTE_BASE_URL="http://<your-lan-ip>:8080" \
+  -e SUPERNOTE_LOCAL_MODE=true \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:11434" \
+  -e SUPERNOTE_LOCAL_LLM_MODEL="llava" \
+  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
+  supernote
+```
+
+> [!NOTE]
+> The image's storage/config volume is `/data` (not `/storage`), and the default
+> command already starts the server, so do **not** append `serve`. Setting a fixed
+> `SUPERNOTE_JWT_SECRET` keeps your device logged in across restarts. The chat model
+> must be **vision-capable** for OCR.
+
+Then create your admin user and connect the device:
+
+```bash
+docker exec -it supernote-server \
+  supernote admin user add you@example.com --url http://localhost:8080
+```
+
+On the Supernote: **Settings > Sync > Private Cloud**, enter `http://<your-lan-ip>:8080`,
+and log in with that email/password.
 
 See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for details.
 

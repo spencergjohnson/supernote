@@ -48,29 +48,57 @@ export SUPERNOTE_HOST=0.0.0.0
 supernote serve
 ```
 
-### Running with Docker
+### Running with Docker (Local AI mode)
+
+Use the helper script at the repo root for a one-shot build + run + instructions, in
+**Local LLM mode** (your own inference server, no Gemini):
+
+```bash
+./run-local.sh
+```
+
+Or run it manually. Note the volume is `/data` (not `/storage`), and the default
+command already starts the server, so do **not** pass `serve`:
 
 ```bash
 # Build the image
 docker build -t supernote .
 
-# Run the container
+# Run the container (Local AI mode)
 docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/storage:/storage \
-  -e SUPERNOTE_GEMINI_API_KEY="your-key" \
   --name supernote-server \
-  supernote serve
+  --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
+  -p 8080:8080 -p 8081:8081 \
+  -v "$(pwd)/data:/data" \
+  -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
+  -e SUPERNOTE_BASE_URL="http://<your-lan-ip>:8080" \
+  -e SUPERNOTE_LOCAL_MODE=true \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:11434" \
+  -e SUPERNOTE_LOCAL_LLM_MODEL="llava" \
+  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
+  supernote
 ```
+
+`SUPERNOTE_LOCAL_LLM_URL` points at your OpenAI-compatible inference server. Because
+the server runs inside the container, reach a service on the host via
+`host.docker.internal` (enabled by `--add-host=...:host-gateway`). The chat model must
+be **vision-capable** for OCR. A fixed `SUPERNOTE_JWT_SECRET` keeps your device logged
+in across restarts.
 
 ### Connecting Your Device
 
 1. Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
 2. Ensure your Supernote device and server are on the same Wi-Fi network.
-3. On your Supernote device, go to **Settings** > **Sync** > **Supernote Cloud**.
-4. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8080`).
-5. Attempt to login using the credentials created via `supernote admin user add`.
-6. Configure folders to sync (e.g., `Note`, `Document`, `EXPORT`) in **Settings** > **Drive** > **Private Cloud**.
+3. Create your admin user (first user becomes admin):
+   ```bash
+   docker exec -it supernote-server \
+     supernote admin user add you@example.com --url http://localhost:8080
+   ```
+4. On your Supernote device, go to **Settings** > **Sync** > **Supernote Cloud**.
+5. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8080`).
+6. Log in using the credentials created in step 3.
+7. Configure folders to sync (e.g., `Note`, `Document`, `EXPORT`) in **Settings** > **Drive** > **Private Cloud**.
 
 ## Robustness & Maintenance
 
