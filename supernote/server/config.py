@@ -72,29 +72,6 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_MCP_PORT`
     """
 
-    tls_cert_file: str | None = None
-    """Path to the TLS certificate (PEM). When set together with tls_key_file,
-    the main server is served over HTTPS instead of HTTP.
-
-    Env Var: `SUPERNOTE_TLS_CERT_FILE`
-    """
-
-    tls_key_file: str | None = None
-    """Path to the TLS private key (PEM). Required to enable HTTPS.
-
-    Env Var: `SUPERNOTE_TLS_KEY_FILE`
-    """
-
-    internal_http_port: int = 8079
-    """Loopback-only (127.0.0.1) plain-HTTP port.
-
-    Only bound when TLS is enabled. It lets in-process / same-container tooling
-    (e.g. the admin CLI) reach the API without dealing with the self-signed
-    certificate. It is never exposed beyond localhost.
-
-    Env Var: `SUPERNOTE_INTERNAL_HTTP_PORT`
-    """
-
     _base_url: str | None = field(default=None, metadata={"name": "base_url"})
     """Base URL for the main server (port 8080).
     Used for generating links and for the MCP Authorization Server issuer.
@@ -185,11 +162,6 @@ BaseConfig
     """
 
     @property
-    def tls_enabled(self) -> bool:
-        """Whether HTTPS should be used for the main server."""
-        return bool(self.tls_cert_file and self.tls_key_file)
-
-    @property
     def base_url(self) -> str:
         """Get the base URL for the main server.
 
@@ -198,8 +170,7 @@ BaseConfig
         if self._base_url:
             return self._base_url.rstrip("/")
         host = "localhost" if self.host == "0.0.0.0" else self.host
-        scheme = "https" if self.tls_enabled else "http"
-        return f"{scheme}://{host}:{self.port}"
+        return f"http://{host}:{self.port}"
 
     @property
     def mcp_base_url(self) -> str:
@@ -278,27 +249,6 @@ BaseConfig
                     os.getenv("SUPERNOTE_MCP_PORT", str(config.mcp_port))
                 )
                 logger.info(f"Using SUPERNOTE_MCP_PORT: {config.mcp_port}")
-            except ValueError:
-                pass
-
-        if os.getenv("SUPERNOTE_TLS_CERT_FILE"):
-            config.tls_cert_file = os.getenv("SUPERNOTE_TLS_CERT_FILE")
-            logger.info(f"Using SUPERNOTE_TLS_CERT_FILE: {config.tls_cert_file}")
-
-        if os.getenv("SUPERNOTE_TLS_KEY_FILE"):
-            config.tls_key_file = os.getenv("SUPERNOTE_TLS_KEY_FILE")
-            logger.info(f"Using SUPERNOTE_TLS_KEY_FILE: {config.tls_key_file}")
-
-        if os.getenv("SUPERNOTE_INTERNAL_HTTP_PORT"):
-            try:
-                config.internal_http_port = int(
-                    os.getenv(
-                        "SUPERNOTE_INTERNAL_HTTP_PORT", str(config.internal_http_port)
-                    )
-                )
-                logger.info(
-                    f"Using SUPERNOTE_INTERNAL_HTTP_PORT: {config.internal_http_port}"
-                )
             except ValueError:
                 pass
 

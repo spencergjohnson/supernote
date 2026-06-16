@@ -2,11 +2,9 @@ import asyncio
 import importlib.resources
 import json
 import logging
-import signal
-import ssl
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, Awaitable, Callable
 
 import aiohttp_remotes
 from aiohttp import web
@@ -464,73 +462,6 @@ async def bootstrap_ephemeral_user(app: web.Application) -> None:
             await session.commit()
 
 
-def _build_ssl_context(config: ServerConfig) -> "ssl.SSLContext":
-    """Build the TLS context for the main HTTPS listener."""
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(
-        certfile=cast(str, config.tls_cert_file),
-        keyfile=cast(str, config.tls_key_file),
-    )
-    return ssl_context
-
-
-async def _serve(config: ServerConfig) -> None:
-    """Start the aiohttp app and serve until interrupted.
-
-    When TLS is enabled the public listener uses HTTPS, and an additional
-    plain-HTTP listener is bound to loopback only (127.0.0.1) so same-host
-    tooling such as the admin CLI can reach the API without the self-signed
-    certificate. The loopback listener is never exposed beyond localhost.
-    """
-    app = create_app(config)
-
-    # Standard access log format for aiohttp
-    access_log_format = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
-
-    runner = web.AppRunner(
-        app,
-        access_log=logging.getLogger("aiohttp.access"),
-        access_log_format=access_log_format,
-    )
-    await runner.setup()
-
-    sites: list[web.BaseSite] = []
-    if config.tls_enabled:
-        ssl_context = _build_ssl_context(config)
-        sites.append(
-            web.TCPSite(runner, config.host, config.port, ssl_context=ssl_context)
-        )
-        # Loopback-only plain HTTP for in-container tooling (admin CLI, etc.).
-        sites.append(web.TCPSite(runner, "127.0.0.1", config.internal_http_port))
-    else:
-        sites.append(web.TCPSite(runner, config.host, config.port))
-
-    try:
-        for site in sites:
-            await site.start()
-
-        scheme = "https" if config.tls_enabled else "http"
-        logger.info(f"======== Running on {scheme}://{config.host}:{config.port} ========")
-        if config.tls_enabled:
-            logger.info(
-                "======== Loopback (plain HTTP) on "
-                f"http://127.0.0.1:{config.internal_http_port} ========"
-            )
-
-        stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, stop_event.set)
-            except NotImplementedError:
-                # Signal handlers are not available on some platforms (e.g. Windows).
-                pass
-
-        await stop_event.wait()
-    finally:
-        await runner.cleanup()
-
-
 def run(args: Any) -> None:
     # Robust logging setup
     FORMAT = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
@@ -542,5 +473,15 @@ def run(args: Any) -> None:
 
     config_dir = getattr(args, "config_dir", None)
     config = ServerConfig.load(config_dir)
+    app = create_app(config)
 
-    asyncio.run(_serve(config))
+    # Standard access log format for aiohttp
+    ACCESS_LOG_FORMAT = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
+
+    web.run_app(
+        app,
+        host=config.host,
+        port=config.port,
+        access_log=logging.getLogger("aiohttp.access"),
+        access_log_format=ACCESS_LOG_FORMAT,
+    )
