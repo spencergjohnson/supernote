@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 def _parse_helper(path: str) -> Any:
     with open(path, "rb") as f:
-        return parse_metadata(f)
+        # 'loose' lets us parse files from newer firmware whose signature is not
+        # yet in SN_SIGNATURES but is forward-compatible (matches SN_FILE_VER_).
+        # This mirrors the PNG converter, which already loads notebooks loosely.
+        return parse_metadata(f, policy="loose")
 
 
 class PageHashingModule(ProcessorModule):
@@ -110,8 +113,12 @@ class PageHashingModule(ProcessorModule):
             )
 
         except Exception as e:
+            # Surface the failure instead of swallowing it: re-raising lets the base
+            # module mark the HASHING task FAILED (visible in the System panel) and
+            # be retried by the stalled-task recovery loop. Returning here would mark
+            # it COMPLETED, hiding the error and preventing any reprocessing.
             logger.error(f"Failed to parse .note file {file_id}: {e}")
-            return
+            raise
 
         # Iterate pages and update DB
         total_pages = metadata.get_total_pages()

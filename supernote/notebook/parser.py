@@ -450,7 +450,12 @@ class SupernoteParser:
     def _check_signature_compatible(self, fobj: FileObj) -> bool:
         latest_signature = self.SN_SIGNATURES[-1]
         try:
-            fobj.seek(0, os.SEEK_SET)
+            # Read at the parser's signature offset (4 for X-series, 0 for the
+            # original format). Reading from 0 unconditionally would include the
+            # leading filetype tag (e.g. b"note") for X-series files, so the
+            # SN_FILE_VER_ pattern would never match and forward-compatible newer
+            # firmware files would be wrongly rejected even under the 'loose' policy.
+            fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
             signature = fobj.read(len(latest_signature)).decode()
         except Exception:
             return False

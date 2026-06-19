@@ -11,9 +11,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Create a non-root user
 RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote supernote
 
-# Install system dependencies for SQL Lite CLI
+# Install system dependencies: SQLite CLI (DB inspection) and curl (debugging the
+# local LLM endpoint reachability from inside the container).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends sqlite3 && \
+    apt-get install -y --no-install-recommends sqlite3 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory and copy project files
