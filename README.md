@@ -95,7 +95,7 @@ By default the synthesis engine uses Google Gemini, but you can run the **entire
 
 ### Prerequisites
 
-Any inference server that exposes the standard OpenAI endpoints (`POST /v1/chat/completions` and `POST /v1/embeddings`) works out of the box, including [llama-swap](https://github.com/mostlygeek/llama-swap), [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), and [vLLM](https://github.com/vllm-project/vllm). You will need two models available: a **vision-capable** chat model for OCR and summaries (e.g. `qwen2.5-vl-7b`, `llava`) and an embedding model for semantic search (e.g. `nomic-embed-text`, `mxbai-embed-large`).
+Any inference server that exposes the standard OpenAI endpoints (`POST /v1/chat/completions` and `POST /v1/embeddings`) works out of the box, including [llama-swap](https://github.com/mostlygeek/llama-swap), [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), and [vLLM](https://github.com/vllm-project/vllm). You will need two models available: a **vision-capable** chat model for OCR and summaries (e.g. `qwen2.5-vl-7b`, `llava`) and an embedding model for semantic search (e.g. `qwen3-embedding-8b`, `mxbai-embed-large`).
 
 ### Configuration
 
@@ -117,13 +117,13 @@ export SUPERNOTE_LOCAL_LLM_URL=http://localhost:8090
 export SUPERNOTE_LOCAL_LLM_MODEL=qwen2.5-vl-7b
 
 # Option B: Ollama (OpenAI-compatible API on :11434)
-ollama pull llava && ollama pull nomic-embed-text
+ollama pull llava && ollama pull qwen3-embedding-8b
 export SUPERNOTE_LOCAL_LLM_URL=http://localhost:11434
 export SUPERNOTE_LOCAL_LLM_MODEL=llava
 
 # Then enable local mode and serve (shared by both options)
 export SUPERNOTE_LOCAL_MODE=true
-export SUPERNOTE_LOCAL_EMBEDDING_MODEL=nomic-embed-text
+export SUPERNOTE_LOCAL_EMBEDDING_MODEL=qwen3-embedding-8b
 supernote serve
 ```
 
@@ -201,7 +201,7 @@ docker run -d \
   -e SUPERNOTE_LOCAL_MODE=true \
   -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
-  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
+  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="qwen3-embedding-8b" \
   supernote
 ```
 

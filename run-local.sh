@@ -31,7 +31,7 @@ DATA_DIR="${DATA_DIR:-$(pwd)/data}"
 # to the host gateway, not the container). For Ollama use :11434, etc.
 LLM_URL="${LLM_URL:-http://host.docker.internal:8080}"
 LLM_MODEL="${LLM_MODEL:-qwen2.5-vl-7b}"        # MUST be vision-capable (OCR)
-EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
+EMBEDDING_MODEL="${EMBEDDING_MODEL:-qwen3-embedding-8b}"
 
 # Tailscale integration. When enabled (and tailscale is installed + logged in),
 # we expose the web UI over HTTPS on your tailnet via `tailscale serve`. This

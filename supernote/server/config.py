@@ -155,7 +155,7 @@ BaseConfig
     Env Var: `SUPERNOTE_LOCAL_LLM_MODEL`
     """
 
-    local_embedding_model: str = "nomic-embed-text"
+    local_embedding_model: str = "qwen3-embedding-8b"
     """Model name to pass in local embedding requests.
 
     Env Var: `SUPERNOTE_LOCAL_EMBEDDING_MODEL`

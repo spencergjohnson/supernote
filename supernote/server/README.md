@@ -76,7 +76,7 @@ docker run -d \
   -e SUPERNOTE_LOCAL_MODE=true \
   -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
-  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="nomic-embed-text" \
+  -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="qwen3-embedding-8b" \
   supernote
 ```
 
