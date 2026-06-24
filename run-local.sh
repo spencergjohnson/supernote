@@ -24,12 +24,26 @@ MCP_PORT="${MCP_PORT:-8081}"  # MCP server (for AI agents)
 # Host directory bind-mounted to /data inside the container (DB + config + files).
 DATA_DIR="${DATA_DIR:-$(pwd)/data}"
 
-# Local inference server (OpenAI-compatible). From inside the container the host
-# is reachable as host.docker.internal (mapped to host-gateway below).
-# Defaults assume llama-swap on the host (:8080). This is the host's port and does
-# NOT clash with the container's own internal 8080 (host.docker.internal resolves
-# to the host gateway, not the container). For Ollama use :11434, etc.
-LLM_URL="${LLM_URL:-http://host.docker.internal:8080}"
+# Inference server (OpenAI-compatible), e.g. llama-swap running in another
+# container on this host. We put both containers on a shared user-defined Docker
+# network so supernote can reach it by DNS name (http://<container>:<port>).
+#
+# Why not host.docker.internal / the host LAN IP? On Linux the host firewall
+# frequently DROPS container->host traffic, so neither is reliable from inside
+# the container. Container->container over a shared bridge is not subject to
+# those host INPUT rules, so it works. Attaching the inference container to this
+# network is additive: it keeps its published host port and its other networks,
+# so anything else on the machine that already talks to it is unaffected.
+#
+# Overrides:
+#   LLM_URL=...        pin an explicit URL (skips the DNS default; e.g. Ollama)
+#   LLM_NETWORK=...    shared Docker network name (default: supernote-net)
+#   LLM_CONTAINER=...  inference container to co-locate + address (default: llamaswap)
+#   LLM_PORT=...       port the inference server listens on inside its container
+LLM_NETWORK="${LLM_NETWORK:-supernote-net}"
+LLM_CONTAINER="${LLM_CONTAINER:-llamaswap}"
+LLM_PORT="${LLM_PORT:-8080}"
+LLM_URL="${LLM_URL:-http://${LLM_CONTAINER}:${LLM_PORT}}"
 LLM_MODEL="${LLM_MODEL:-qwen2.5-vl-7b}"        # MUST be vision-capable (OCR)
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-qwen3-embedding-8b}"
 
@@ -162,11 +176,31 @@ if [ "$TS_ENABLED" = "1" ]; then
   PROXY_ENV_ARGS=(-e SUPERNOTE_PROXY_MODE=relaxed)
 fi
 
+# Ensure the shared network exists and the inference container is attached to it.
+# This is additive (docker network connect adds an interface; it does not remove
+# the container's published ports or other networks), so other consumers of the
+# inference server are unaffected.
+if ! docker network inspect "$LLM_NETWORK" >/dev/null 2>&1; then
+  log "Creating Docker network '$LLM_NETWORK' ..."
+  docker network create "$LLM_NETWORK" >/dev/null
+fi
+if docker ps -a --format '{{.Names}}' | grep -qx "$LLM_CONTAINER"; then
+  if ! docker inspect -f '{{json .NetworkSettings.Networks}}' "$LLM_CONTAINER" 2>/dev/null | grep -q "\"$LLM_NETWORK\""; then
+    log "Attaching '$LLM_CONTAINER' to network '$LLM_NETWORK' ..."
+    docker network connect "$LLM_NETWORK" "$LLM_CONTAINER" \
+      || warn "Could not attach '$LLM_CONTAINER' to '$LLM_NETWORK'; supernote may not reach the LLM."
+  fi
+else
+  warn "Inference container '$LLM_CONTAINER' not found. Start it and ensure it joins '$LLM_NETWORK'"
+  warn "(add 'docker network connect $LLM_NETWORK $LLM_CONTAINER' to its startup script)."
+fi
+
 log "Starting container '$CONTAINER_NAME' in LOCAL AI mode ..."
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
+  --network "$LLM_NETWORK" \
   -p "${PORT}:8080" \
   -p "${MCP_PORT}:8081" \
   -v "${DATA_DIR}:/data" \
@@ -281,10 +315,14 @@ Notes
 --------------------------------------------------------------------------
   * LOCAL AI mode is on: OCR, summaries, and search use your own inference
     server at $LLM_URL (no Gemini, no API key).
+  * The inference server is reached over the shared Docker network '$LLM_NETWORK'
+    by DNS name. If '$LLM_CONTAINER' is recreated, re-attach it (its startup
+    script should run: docker network connect $LLM_NETWORK $LLM_CONTAINER).
   * The chat model MUST be vision-capable for OCR (e.g. llava, qwen2.5-vl).
   * If the host firewall blocks it, allow inbound TCP ${PORT} (and ${MCP_PORT}).
-  * To point at a different inference server, re-run with e.g. (Ollama):
-      LLM_URL=http://host.docker.internal:11434 LLM_MODEL=llava ./run-local.sh
+  * To point at a different inference server, re-run with e.g.:
+      LLM_CONTAINER=ollama LLM_PORT=11434 LLM_MODEL=llava ./run-local.sh
+    (or pin a full URL): LLM_URL=http://my-host:11434 LLM_MODEL=llava ./run-local.sh
 $(if [ -n "$TS_URL" ]; then cat <<TSNOTE
   * Tailscale HTTPS is enabled (tailscale serve -> 127.0.0.1:${PORT}). Disable
     with: ENABLE_TAILSCALE=0 ./run-local.sh  (and 'tailscale serve --https=443 off').

@@ -64,27 +64,36 @@ command already starts the server, so do **not** pass `serve`:
 # Build the image
 docker build -t supernote .
 
+# Shared network so the container can reach the inference server by name.
+docker network create supernote-net 2>/dev/null || true
+docker network connect supernote-net llamaswap 2>/dev/null || true
+
 # Run the container (Local AI mode)
 docker run -d \
   --name supernote-server \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
+  --network supernote-net \
   -p 8080:8080 -p 8081:8081 \
   -v "$(pwd)/data:/data" \
   -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
   -e SUPERNOTE_BASE_URL="http://localhost:8080" \
   -e SUPERNOTE_LOCAL_MODE=true \
-  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://llamaswap:8080" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
   -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="qwen3-embedding-8b" \
   supernote
 ```
 
-`SUPERNOTE_LOCAL_LLM_URL` points at your OpenAI-compatible inference server. Because
-the server runs inside the container, reach a service on the host via
-`host.docker.internal` (enabled by `--add-host=...:host-gateway`). The chat model must
-be **vision-capable** for OCR. A fixed `SUPERNOTE_JWT_SECRET` keeps your device logged
-in across restarts.
+`SUPERNOTE_LOCAL_LLM_URL` points at your OpenAI-compatible inference server. The
+cleanest way to reach it from inside the container is to put both containers on a
+shared user-defined network (`supernote-net`) and address it by container name
+(`http://llamaswap:8080`). This avoids `host.docker.internal`, which is unreliable on
+Linux because the host firewall often drops container->host traffic. Attaching the
+inference container to the network is additive (it keeps its published port and other
+networks), but it must rejoin `supernote-net` if recreated. The chat model must be
+**vision-capable** for OCR. A fixed `SUPERNOTE_JWT_SECRET` keeps your device logged in
+across restarts.
 
 Keep `SUPERNOTE_BASE_URL` on `localhost` rather than your LAN IP. It is the MCP OAuth
 issuer URL, and the MCP SDK rejects a non-HTTPS issuer unless the host is

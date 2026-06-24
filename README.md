@@ -190,16 +190,23 @@ To do it by hand instead:
 ```bash
 docker build -t supernote .
 
+# Shared network so this container can reach the inference server by name.
+docker network create supernote-net 2>/dev/null || true
+# Attach your inference container (e.g. llama-swap) to it. Additive: it keeps its
+# published port and other networks, so other consumers are unaffected.
+docker network connect supernote-net llamaswap 2>/dev/null || true
+
 docker run -d \
   --name supernote-server \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
+  --network supernote-net \
   -p 8080:8080 -p 8081:8081 \
   -v "$(pwd)/data:/data" \
   -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
   -e SUPERNOTE_BASE_URL="http://localhost:8080" \
   -e SUPERNOTE_LOCAL_MODE=true \
-  -e SUPERNOTE_LOCAL_LLM_URL="http://host.docker.internal:8080" \
+  -e SUPERNOTE_LOCAL_LLM_URL="http://llamaswap:8080" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
   -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="qwen3-embedding-8b" \
   supernote
@@ -214,8 +221,15 @@ docker run -d \
 > Keep `SUPERNOTE_BASE_URL` on `localhost` (not your LAN IP): it's the MCP OAuth
 > issuer, and the MCP SDK rejects a non-HTTPS issuer unless the host is `localhost`.
 > It does not affect the web UI or device sync, which use the address you connect to
-> directly. `SUPERNOTE_LOCAL_LLM_URL` assumes llama-swap on the host at `:8080`
-> (reached via `host.docker.internal`); use `:11434`/`llava` for Ollama.
+> directly.
+>
+> `SUPERNOTE_LOCAL_LLM_URL` points at the inference container by its name on the
+> shared `supernote-net` network (`http://llamaswap:8080`). This is more reliable
+> than `host.docker.internal` on Linux, where the host firewall often drops
+> container->host traffic. The inference container must also be attached to
+> `supernote-net`, and must rejoin it if recreated (add
+> `docker network connect supernote-net <name>` to its startup script). For Ollama
+> use `http://ollama:11434` with `llava`.
 
 Then create your admin user and connect the device:
 
