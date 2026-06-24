@@ -25,6 +25,7 @@ from supernote.server.exceptions import (
     FileNotFound,
     HashMismatch,
     InvalidPath,
+    QuotaExceeded,
 )
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
@@ -32,6 +33,7 @@ from supernote.server.utils.paths import (
 )
 
 from ..db.models.file import RecycleFileDO, UserFileDO
+from ..db.models.user import DEFAULT_QUOTA
 from ..db.session import DatabaseSessionManager
 from ..events import LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from .blob import BlobStorage
@@ -359,22 +361,52 @@ class FileService:
 
         blob_size = metadata.size
 
-        # 3. Create Metadata in VFS
-        async with self.session_manager.session() as session:
-            vfs = VirtualFileSystem(session)
-            clean_path = path_str.strip("/")
-            parent_id = 0
-            if clean_path:
-                parent_id = await vfs.ensure_directory_path(user_id, clean_path)
+        # Authoritative, replace-aware quota check using the real blob size.
+        # This is the security gate; the pre-flight check at upload/apply is advisory.
+        # The check runs inside create_file's transaction so it is atomic and accounts
+        # for the bytes freed by any same-path file being overwritten (a same-size
+        # overwrite or an identical re-sync therefore never gets falsely rejected).
+        # On rejection, the staged blob is deleted to avoid a storage leak.
+        quota = await self.get_user_quota(user)
 
-            new_file = await vfs.create_file(
-                user_id=user_id,
-                parent_id=parent_id,
-                name=filename,
-                size=blob_size,
-                md5=content_hash,
-                storage_key=inner_name,
-            )
+        # 3. Create Metadata in VFS
+        try:
+            async with self.session_manager.session() as session:
+                vfs = VirtualFileSystem(session)
+                clean_path = path_str.strip("/")
+                parent_id = 0
+                if clean_path:
+                    parent_id = await vfs.ensure_directory_path(user_id, clean_path)
+
+                new_file = await vfs.create_file(
+                    user_id=user_id,
+                    parent_id=parent_id,
+                    name=filename,
+                    size=blob_size,
+                    md5=content_hash,
+                    storage_key=inner_name,
+                    quota=quota,
+                )
+        except QuotaExceeded:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, inner_name)
+            except Exception:
+                logger.warning(
+                    f"finish_upload: failed to delete blob {inner_name} after quota rejection"
+                )
+            raise
+
+        # Dedup short-circuit: create_file returned an existing row whose content
+        # matches (same md5). The blob we just staged under inner_name is now
+        # unreferenced — delete it to avoid a permanent leak.
+        if new_file.storage_key != inner_name:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, inner_name)
+                logger.debug(f"finish_upload: freed redundant dedup blob {inner_name}")
+            except Exception:
+                logger.warning(
+                    f"finish_upload: failed to delete redundant dedup blob {inner_name}"
+                )
 
         # 4. Construct response
         clean_path = path_str.strip("/")
@@ -418,18 +450,46 @@ class FileService:
 
         blob_size = metadata.size
 
-        # 2. Create VFS Node
-        async with self.session_manager.session() as session:
-            vfs = VirtualFileSystem(session)
+        # Authoritative, replace-aware quota check (atomic, inside create_file's
+        # transaction); delete the staged blob on rejection. See finish_upload for
+        # the rationale on why overwrites/re-syncs are not falsely rejected.
+        quota = await self.get_user_quota(user)
 
-            new_file = await vfs.create_file(
-                user_id=user_id,
-                parent_id=directory_id,
-                name=file_name,
-                size=blob_size,
-                md5=md5,
-                storage_key=inner_name,
-            )
+        # 2. Create VFS Node
+        try:
+            async with self.session_manager.session() as session:
+                vfs = VirtualFileSystem(session)
+
+                new_file = await vfs.create_file(
+                    user_id=user_id,
+                    parent_id=directory_id,
+                    name=file_name,
+                    size=blob_size,
+                    md5=md5,
+                    storage_key=inner_name,
+                    quota=quota,
+                )
+        except QuotaExceeded:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, inner_name)
+            except Exception:
+                logger.warning(
+                    f"upload_finish_web: failed to delete blob {inner_name} after quota rejection"
+                )
+            raise
+
+        # Dedup short-circuit: create_file returned an existing row (same md5).
+        # The blob staged under inner_name is now unreferenced — delete it.
+        if new_file.storage_key != inner_name:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, inner_name)
+                logger.debug(
+                    f"upload_finish_web: freed redundant dedup blob {inner_name}"
+                )
+            except Exception:
+                logger.warning(
+                    f"upload_finish_web: failed to delete redundant dedup blob {inner_name}"
+                )
 
         # 3. Emit Event (Fire and Forget)
         if self.event_bus and file_name.endswith(".note"):
@@ -535,6 +595,58 @@ class FileService:
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             return await vfs.get_total_usage(user_id)
+
+    async def get_user_quota(self, user: str) -> int:
+        """Get the storage quota for a user in bytes."""
+        user_do = await self.user_service.get_user_by_email(user)
+        if user_do is None:
+            return DEFAULT_QUOTA
+        try:
+            return int(user_do.total_capacity)
+        except (TypeError, ValueError):
+            return DEFAULT_QUOTA
+
+    async def check_upload_quota_preflight(
+        self, user: str, path: str, file_name: str, incoming_bytes: int
+    ) -> None:
+        """Advisory pre-flight quota check, replace-aware and read-only.
+
+        Raises QuotaExceeded if uploading ``incoming_bytes`` to ``path/file_name``
+        would exceed the user's quota *after accounting for the bytes freed by any
+        existing same-path file it would overwrite*. This mirrors the authoritative
+        check in create_file so a near-quota device can still re-sync or overwrite an
+        existing file without being blocked before the upload even starts.
+
+        Never creates directories (uses resolve_path, not ensure_directory_path);
+        size is client-supplied here, so this is advisory — finish_upload re-checks
+        with the real blob size.
+        """
+        quota = await self.get_user_quota(user)
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            used = await vfs.get_total_usage(user_id)
+            clean_path = path.strip("/")
+            full_path = f"{clean_path}/{file_name}" if clean_path else file_name
+            existing = await vfs.resolve_path(user_id, full_path)
+            replaced = (
+                (existing.size or 0)
+                if existing is not None and existing.is_folder == "N"
+                else 0
+            )
+        projected = used - replaced + incoming_bytes
+        if projected > quota:
+            raise QuotaExceeded(
+                f"Storage quota exceeded: {projected} bytes required, "
+                f"quota is {quota} bytes"
+            )
+
+    async def get_recycle_usage(self, user: str) -> int:
+        """Get total size of files in the recycle bin for a user in bytes."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            return await vfs.get_recycle_usage(user_id)
 
     async def is_empty(self, user: str) -> bool:
         """Check if user storage is empty using VFS."""
@@ -804,6 +916,7 @@ class FileService:
     async def delete_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Permanently delete items from recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
+        orphaned_keys: list[str] = []
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             # Fetch recycle nodes before deletion to get their names/types for event emission
@@ -814,7 +927,7 @@ class FileService:
             result = await session.execute(stmt)
             nodes_to_delete = result.scalars().all()
 
-            await vfs.purge_recycle(user_id, id_list)
+            orphaned_keys = await vfs.purge_recycle(user_id, id_list)
 
             if self.event_bus:
                 for node in nodes_to_delete:
@@ -827,6 +940,14 @@ class FileService:
                             NoteDeletedEvent(file_id=node.file_id, user_id=user_id)
                         )
 
+        # Delete orphaned blobs outside the session (purge_recycle already committed)
+        for key in orphaned_keys:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, key)
+                logger.debug(f"delete_from_recycle: freed blob {key}")
+            except Exception:
+                logger.warning(f"delete_from_recycle: failed to delete blob {key}", exc_info=True)
+
     async def revert_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Restore items from recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
@@ -836,11 +957,26 @@ class FileService:
                 await vfs.restore_node(user_id, recycle_id)
 
     async def clear_recycle(self, user: str) -> None:
-        """Empty the recycle bin for a specific user using VFS."""
+        """Empty the recycle bin for a specific user using VFS.
+
+        NOTE (disk-exhaustion risk — deferred): The recycle bin is not counted
+        toward the user's storage quota and has no automatic size or age cap.
+        This call is the only server-side reclamation path (besides per-item
+        delete_from_recycle). See ServerConfig for tracking comment.
+        """
         user_id = await self.user_service.get_user_id(user)
+        orphaned_keys: list[str] = []
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            await vfs.purge_recycle(user_id)
+            orphaned_keys = await vfs.purge_recycle(user_id)
+
+        # Delete orphaned blobs outside the session
+        for key in orphaned_keys:
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, key)
+                logger.debug(f"clear_recycle: freed blob {key}")
+            except Exception:
+                logger.warning(f"clear_recycle: failed to delete blob {key}", exc_info=True)
 
     async def search_files(self, user: str, keyword: str) -> list[FileEntity]:
         """Search for files matching the keyword in user's storage.

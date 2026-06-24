@@ -161,6 +161,29 @@ BaseConfig
     Env Var: `SUPERNOTE_LOCAL_EMBEDDING_MODEL`
     """
 
+    temp_ttl_seconds: int = 3600
+    """Age threshold (seconds) for removing orphaned temp upload files.
+    A temp file is removed only when its mtime age exceeds this value, so any
+    upload in progress (which keeps a fresh mtime) is always spared.
+
+    Env Var: `SUPERNOTE_TEMP_TTL_SECONDS`
+    """
+
+    temp_cleanup_interval_seconds: int = 900
+    """How often (seconds) the temp file sweeper runs.
+
+    Env Var: `SUPERNOTE_TEMP_CLEANUP_INTERVAL_SECONDS`
+    """
+
+    # NOTE (disk-exhaustion risk — deferred): The recycle bin is intentionally
+    # NOT counted toward a user's storage quota, and there is currently no
+    # automatic age-based or size-capped pruning of recycle bin contents.
+    # Users accumulate recycle bin data without limit until they explicitly
+    # empty the bin. The bin size is surfaced in the UI (SystemPanel recycleSize
+    # field) so users can see it, but there is no server-side enforcement.
+    # A future improvement would be to add a configurable TTL or per-user size
+    # cap with automatic purging — similar to TempCleanupService above.
+
     @property
     def base_url(self) -> str:
         """Get the base URL for the main server.
@@ -336,6 +359,22 @@ BaseConfig
         if local_embedding_model := os.getenv("SUPERNOTE_LOCAL_EMBEDDING_MODEL"):
             config.local_embedding_model = local_embedding_model
             logger.info(f"Using SUPERNOTE_LOCAL_EMBEDDING_MODEL: {config.local_embedding_model}")
+
+        if temp_ttl := os.getenv("SUPERNOTE_TEMP_TTL_SECONDS"):
+            try:
+                config.temp_ttl_seconds = int(temp_ttl)
+                logger.info(f"Using SUPERNOTE_TEMP_TTL_SECONDS: {config.temp_ttl_seconds}")
+            except ValueError:
+                pass
+
+        if temp_interval := os.getenv("SUPERNOTE_TEMP_CLEANUP_INTERVAL_SECONDS"):
+            try:
+                config.temp_cleanup_interval_seconds = int(temp_interval)
+                logger.info(
+                    f"Using SUPERNOTE_TEMP_CLEANUP_INTERVAL_SECONDS: {config.temp_cleanup_interval_seconds}"
+                )
+            except ValueError:
+                pass
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

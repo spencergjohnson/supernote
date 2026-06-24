@@ -136,6 +136,7 @@ class CapacityVO(BaseResponse):
     total_capacity: int = field(
         metadata=field_options(alias="totalCapacity"), default=0
     )
+    recycle_size: int = field(metadata=field_options(alias="recycleSize"), default=0)
 
 
 @dataclass
@@ -297,6 +298,7 @@ class RecycleFileListVO(BaseResponse):
     """
 
     total: int = 0
+    total_size: int = field(metadata=field_options(alias="totalSize"), default=0)
     recycle_file_vo_list: list[RecycleFileVO] = field(
         metadata=field_options(alias="recycleFileVOList"), default_factory=list
     )

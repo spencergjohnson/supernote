@@ -105,8 +105,9 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     try:
-        # TODO: Implement quota properly
         used = await file_service.get_storage_usage(user_email)
+        quota = await file_service.get_user_quota(user_email)
+        recycle_size = await file_service.get_recycle_usage(user_email)
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:
@@ -115,7 +116,8 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     return web.json_response(
         CapacityVO(
             used_capacity=used,
-            total_capacity=1024 * 1024 * 1024 * 10,  # 10GB total
+            total_capacity=quota,
+            recycle_size=recycle_size,
         ).to_dict()
     )
 
@@ -155,7 +157,12 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
                 )
             )
 
-        response = RecycleFileListVO(total=total, recycle_file_vo_list=result_items)
+        total_size = sum(item.size for item in recycle_files)
+        response = RecycleFileListVO(
+            total=total,
+            total_size=total_size,
+            recycle_file_vo_list=result_items,
+        )
         return web.json_response(response.to_dict())
     except SupernoteError as err:
         return err.to_response()

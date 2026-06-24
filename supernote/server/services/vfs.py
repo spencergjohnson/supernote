@@ -6,7 +6,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
-from supernote.server.exceptions import FileAlreadyExists, InvalidPath
+from supernote.server.exceptions import FileAlreadyExists, InvalidPath, QuotaExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +95,68 @@ class VirtualFileSystem:
         size: int,
         md5: str,
         storage_key: str,
+        quota: int | None = None,
     ) -> UserFileDO:
-        """Create a file entry (assuming content is handled elsewhere/CAS)."""
+        """Create or replace a file entry, soft-deleting any prior version to the recycle bin.
+
+        Steps (all in one transaction):
+        1. Find all active, non-folder rows with the same (user_id, parent_id, name).
+        2. Same-hash short-circuit: if there is exactly one existing active row whose
+           md5 matches the incoming md5, return it as-is (no-op re-sync).
+        3. Replace-aware quota enforcement (only when ``quota`` is provided): the new
+           row adds ``size`` bytes, but the existing same-name rows that step 4 soft-
+           deletes free their bytes first, so the *net* change is
+           ``size - sum(existing sizes)``. Because the same-hash short-circuit in
+           step 2 already returned, an unchanged re-sync is never evaluated here and
+           can never be falsely rejected. Performed inside this transaction so the
+           usage read and the insert are atomic (no TOCTOU window).
+        4. Soft-delete each existing match: set is_active="N" and add a RecycleFileDO entry,
+           exactly as delete_node does, so old versions appear in the recycle bin.
+        5. Insert the new active row.
+        """
         now_ms = int(time.time() * 1000)
 
-        # Check quota (TODO: Implement Capacity check)
+        # Step 1: Find existing active files with the same name in this directory.
+        existing_stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+            UserFileDO.file_name == name,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "N",
+        )
+        existing_result = await self.db.execute(existing_stmt)
+        existing_files = list(existing_result.scalars().all())
 
+        # Step 2: Same-hash short-circuit — no-op re-sync.
+        if len(existing_files) == 1 and existing_files[0].md5 == md5:
+            return existing_files[0]
+
+        # Step 3: Replace-aware quota enforcement.
+        if quota is not None:
+            used = await self.get_total_usage(user_id)
+            replaced = sum(existing.size or 0 for existing in existing_files)
+            projected = used - replaced + size
+            if projected > quota:
+                raise QuotaExceeded(
+                    f"Storage quota exceeded: {projected} bytes required, "
+                    f"quota is {quota} bytes"
+                )
+
+        # Step 4: Soft-delete each existing match to the recycle bin.
+        for existing in existing_files:
+            existing.is_active = "N"
+            existing.deleted_root_id = existing.id  # single-file overwrite grouping
+            recycle = RecycleFileDO(
+                user_id=user_id,
+                file_id=existing.id,
+                file_name=existing.file_name,
+                size=existing.size,
+                is_folder=existing.is_folder,
+                delete_time=now_ms,
+            )
+            self.db.add(recycle)
+
+        # Step 5: Insert the new active row.
         new_file = UserFileDO(
             user_id=user_id,
             directory_id=parent_id,
@@ -128,28 +184,66 @@ class VirtualFileSystem:
         return result.scalar_one_or_none()
 
     async def delete_node(self, user_id: int, node_id: int) -> bool:
-        """Soft delete a file/folder."""
+        """Soft-delete a file or folder (recursive for folders).
+
+        For a single file:
+        - Sets is_active="N", deleted_root_id=node.id.
+        - Creates one RecycleFileDO entry.
+
+        For a folder:
+        - Recursively gathers all active descendants via list_recursive.
+        - Sets is_active="N" and deleted_root_id=node.id on every descendant
+          that was not already independently soft-deleted (only active rows are
+          touched, so prior independent deletes keep their own deleted_root_id).
+        - Sets is_active="N" and deleted_root_id=node.id on the folder itself.
+        - Creates a single RecycleFileDO entry for the folder root whose size
+          is the sum of all active descendant file sizes (for accurate recycle
+          usage reporting).
+        """
         node = await self.get_node_by_id(user_id, node_id)
         if not node:
             return False
 
-        # TODO: Handle recursive soft delete for folders?
-        # For now, just mark the node.
-
-        node.is_active = "N"
-
-        # Create recycle bin entry
         now_ms = int(time.time() * 1000)
-        recycle = RecycleFileDO(
-            user_id=user_id,
-            file_id=node.id,
-            file_name=node.file_name,
-            size=node.size,
-            is_folder=node.is_folder,
-            delete_time=now_ms,
-        )
-        self.db.add(recycle)
 
+        if node.is_folder == "Y":
+            # Gather all currently-active descendants.
+            descendants = await self.list_recursive(user_id, node.id)
+            subtree_size = 0
+            for desc_node, _rel_path in descendants:
+                # list_recursive only returns active nodes (uses list_directory which
+                # filters is_active="Y"), so every node here is fair game.
+                desc_node.is_active = "N"
+                desc_node.deleted_root_id = node.id
+                if desc_node.is_folder == "N":
+                    subtree_size += desc_node.size or 0
+
+            # Soft-delete the folder root itself.
+            node.is_active = "N"
+            node.deleted_root_id = node.id
+
+            recycle = RecycleFileDO(
+                user_id=user_id,
+                file_id=node.id,
+                file_name=node.file_name,
+                size=subtree_size,
+                is_folder=node.is_folder,
+                delete_time=now_ms,
+            )
+        else:
+            node.is_active = "N"
+            node.deleted_root_id = node.id
+
+            recycle = RecycleFileDO(
+                user_id=user_id,
+                file_id=node.id,
+                file_name=node.file_name,
+                size=node.size,
+                is_folder=node.is_folder,
+                delete_time=now_ms,
+            )
+
+        self.db.add(recycle)
         await self.db.commit()
         return True
 
@@ -386,7 +480,26 @@ class VirtualFileSystem:
         return list(result.scalars().all())
 
     async def restore_node(self, user_id: int, recycle_id: int) -> bool:
-        """Restore a file from recycle bin."""
+        """Restore a file or folder subtree from the recycle bin.
+
+        For a single file:
+        - Reactivates the one UserFileDO row, auto-renaming if the path is now occupied.
+
+        For a folder:
+        - Reactivates the folder root and all UserFileDO rows sharing the same
+          deleted_root_id (i.e. all members of the deleted subtree).
+        - Auto-renames the root only; descendants live inside the restored subtree
+          and cannot have sibling collisions caused by the restore.
+        - Clears deleted_root_id on every reactivated row.
+        - Removes the single RecycleFileDO entry.
+
+        Orphan guard (restore-to-root fallback):
+        - If the item's original parent folder no longer exists or is inactive, the
+          root is reparented to directory_id=0 (root) so it always surfaces in the
+          file tree rather than becoming invisible under a deleted parent.
+        - Only the root is reparented; folder-subtree descendants keep their
+          intra-subtree directory_ids and are never orphaned by this case.
+        """
         stmt = select(RecycleFileDO).where(
             RecycleFileDO.user_id == user_id, RecycleFileDO.id == recycle_id
         )
@@ -394,16 +507,46 @@ class VirtualFileSystem:
         if (recycle_entry := result.scalar_one_or_none()) is None:
             return False
 
-        # Get original node
+        root_file_id = recycle_entry.file_id
+        now_ms = int(time.time() * 1000)
+
+        # Gather the root node.
         node_stmt = select(UserFileDO).where(
-            UserFileDO.user_id == user_id, UserFileDO.id == recycle_entry.file_id
+            UserFileDO.user_id == user_id, UserFileDO.id == root_file_id
         )
         node_result = await self.db.execute(node_stmt)
-        if node := node_result.scalar_one_or_none():
-            node.is_active = "Y"
-            # TODO: Lets add common functions for getting the current now_ms so we can
-            # fake out update time in tests etc.
-            node.update_time = int(time.time() * 1000)
+        root_node = node_result.scalar_one_or_none()
+
+        if root_node is not None:
+            # Orphan guard: verify the original parent is still active.
+            # If it's gone, fall back to root so the item is always browsable.
+            target_parent_id = root_node.directory_id
+            if target_parent_id != 0:
+                parent = await self.get_node_by_id(user_id, target_parent_id)
+                if parent is None or parent.is_folder != "Y":
+                    target_parent_id = 0
+
+            # Resolve name collision against the effective parent.
+            root_node.file_name = await self._resolve_unique_name(
+                user_id, target_parent_id, root_node.file_name, root_node.is_folder
+            )
+            root_node.directory_id = target_parent_id
+            root_node.is_active = "Y"
+            root_node.deleted_root_id = None
+            root_node.update_time = now_ms
+
+            if root_node.is_folder == "Y":
+                # Reactivate all other members of this deleted subtree.
+                subtree_stmt = select(UserFileDO).where(
+                    UserFileDO.user_id == user_id,
+                    UserFileDO.deleted_root_id == root_file_id,
+                    UserFileDO.id != root_file_id,  # root already handled above
+                )
+                subtree_result = await self.db.execute(subtree_stmt)
+                for member in subtree_result.scalars().all():
+                    member.is_active = "Y"
+                    member.deleted_root_id = None
+                    member.update_time = now_ms
 
         await self.db.delete(recycle_entry)
         await self.db.commit()
@@ -411,16 +554,74 @@ class VirtualFileSystem:
 
     async def purge_recycle(
         self, user_id: int, recycle_ids: list[int] | None = None
-    ) -> None:
-        """Permanently delete items from recycle bin."""
+    ) -> list[str]:
+        """Permanently delete items from recycle bin.
 
-        stmt = delete(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
+        Removes the RecycleFileDO entries and all UserFileDO rows that belong to
+        the deleted subtree — identified via deleted_root_id == entry.file_id.
+        For single-file entries, deleted_root_id == the file's own id, so the same
+        logic applies uniformly.
+
+        Returns a list of storage_keys that are now unreferenced by any UserFileDO
+        row (active or inactive). The caller is responsible for deleting those blobs.
+        The ref-count check is performed after deletion so the count is accurate —
+        copy_node shares storage_keys, so a key is only returned when truly orphaned.
+        """
+        # Step 1: Collect the RecycleFileDO entries to purge.
+        entry_stmt = select(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
         if recycle_ids:
-            stmt = stmt.where(RecycleFileDO.id.in_(recycle_ids))
+            entry_stmt = entry_stmt.where(RecycleFileDO.id.in_(recycle_ids))
+        result = await self.db.execute(entry_stmt)
+        entries = list(result.scalars().all())
 
-        await self.db.execute(stmt)
-        # TODO: Also delete UserFileDO? For now, VFS "active='N'" nodes remain.
+        if not entries:
+            return []
+
+        root_file_ids = [e.file_id for e in entries]
+
+        # Step 2: Collect all UserFileDO rows belonging to these subtrees.
+        # For single files: deleted_root_id == file's own id.
+        # For folder subtrees: all members share deleted_root_id == folder root id.
+        subtree_stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.deleted_root_id.in_(root_file_ids),
+        )
+        subtree_result = await self.db.execute(subtree_stmt)
+        all_nodes = list(subtree_result.scalars().all())
+
+        # Collect storage keys from non-folder rows only (folders have no blob).
+        candidate_keys = [
+            n.storage_key for n in all_nodes
+            if n.is_folder == "N" and n.storage_key
+        ]
+
+        # Step 3: Delete all UserFileDO rows in the subtrees.
+        for node in all_nodes:
+            await self.db.delete(node)
+
+        # Step 4: Delete RecycleFileDO entries.
+        del_stmt = delete(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
+        if recycle_ids:
+            del_stmt = del_stmt.where(RecycleFileDO.id.in_(recycle_ids))
+        await self.db.execute(del_stmt)
+
+        # Step 5: Commit – rows are gone now.
         await self.db.commit()
+
+        # Step 6: For each candidate key, check remaining refs.
+        # A key is orphaned only when no UserFileDO row (any state) still references it.
+        # copy_node shares storage_keys, so we must be careful not to remove a live blob.
+        orphaned_keys: list[str] = []
+        for key in set(candidate_keys):
+            ref_stmt = select(func.count(UserFileDO.id)).where(
+                UserFileDO.storage_key == key
+            )
+            ref_result = await self.db.execute(ref_stmt)
+            count = ref_result.scalar() or 0
+            if count == 0:
+                orphaned_keys.append(key)
+
+        return orphaned_keys
 
     async def search_files(self, user_id: int, keyword: str) -> list[UserFileDO]:
         """Search for active files/folders by keyword (case-insensitive)."""
@@ -451,6 +652,31 @@ class VirtualFileSystem:
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def _resolve_unique_name(
+        self, user_id: int, parent_id: int, name: str, is_folder: str
+    ) -> str:
+        """Return a name that does not collide with any active node in the parent directory.
+
+        If *name* is already free, returns it unchanged.  Otherwise appends
+        ``(1)``, ``(2)`` … preserving any file extension (for non-folders).
+        Raises ``FileAlreadyExists`` after 100 attempts.
+        """
+        if not await self._check_exists(user_id, parent_id, name, is_folder):
+            return name
+
+        base_name = name
+        ext = ""
+        if is_folder != "Y" and "." in name:
+            base_name, raw_ext = name.rsplit(".", 1)
+            ext = f".{raw_ext}"
+
+        for counter in range(1, 101):
+            candidate = f"{base_name} ({counter}){ext}"
+            if not await self._check_exists(user_id, parent_id, candidate, is_folder):
+                return candidate
+
+        raise FileAlreadyExists(f"File already exists: {name}")
 
     async def get_aggregated_folder_sizes(self, user_id: int) -> dict[int, int]:
         """Return a map of folder_id -> total descendant file bytes for all folders owned by user."""
@@ -494,6 +720,14 @@ class VirtualFileSystem:
         result = await self.db.execute(stmt)
         total = result.scalar()
         return total or 0
+
+    async def get_recycle_usage(self, user_id: int) -> int:
+        """Calculate total size of files in the recycle bin for a user in bytes."""
+        stmt = select(func.sum(RecycleFileDO.size)).where(
+            RecycleFileDO.user_id == user_id
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
 
     async def is_empty(self, user_id: int) -> bool:
         """Check whether the user has any active *files* on the server.

@@ -36,6 +36,7 @@ from .routes import (
 )
 from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
+from .services.temp_cleanup import TempCleanupService
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
@@ -268,6 +269,11 @@ def create_app(config: ServerConfig) -> web.Application:
 
     # Initialize services
     blob_storage = LocalBlobStorage(config.storage_root)
+    temp_cleanup_service = TempCleanupService(
+        blob_storage,
+        ttl_seconds=config.temp_ttl_seconds,
+        interval_seconds=config.temp_cleanup_interval_seconds,
+    )
 
     session_manager = create_db_session_manager(config.db_url)
     coordination_service = create_coordination_service(session_manager)
@@ -421,6 +427,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await processor_service.start()
+        await temp_cleanup_service.start()
         logger.info("Startup sequence complete.")
 
         app["mcp_task"] = mcp_task
@@ -436,6 +443,7 @@ def create_app(config: ServerConfig) -> web.Application:
                 pass
 
         await processor_service.stop()
+        await temp_cleanup_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)

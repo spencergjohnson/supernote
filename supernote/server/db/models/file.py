@@ -45,6 +45,13 @@ class UserFileDO(Base):
     is_active: Mapped[str] = mapped_column(String(1), default="Y", nullable=False)
     """'Y' = Active, 'N' = Deleted."""
 
+    deleted_root_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, index=True, default=None
+    )
+    """ID of the top-level node that triggered this soft-delete (its own id for single files,
+    the folder's id for every member of a deleted subtree). NULL means the row is active.
+    Used to group a deleted subtree for restore/purge operations."""
+
     create_time: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000)
     )

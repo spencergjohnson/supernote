@@ -240,6 +240,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
     try:
         used = await file_service.get_storage_usage(user_email)
+        quota = await file_service.get_user_quota(user_email)
 
         return web.json_response(
             CapacityLocalVO(
@@ -247,7 +248,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
                 used=used,
                 allocation_vo=AllocationVO(
                     tag="personal",
-                    allocated=1024 * 1024 * 1024 * 10,  # 10GB total
+                    allocated=quota,
                 ),
             ).to_dict()
         )
@@ -315,8 +316,24 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
+    user_email = request["user"]
+
+    file_service: FileService = request.app["file_service"]
 
     try:
+        # Pre-flight quota check (advisory: size is client-supplied and may be missing).
+        # Replace-aware so a near-quota device can still re-sync/overwrite an existing
+        # file. The authoritative check in upload/finish uses the real blob size.
+        if req_data.size:
+            try:
+                incoming_bytes = int(req_data.size)
+            except (ValueError, TypeError):
+                incoming_bytes = 0  # Unparseable size – skip pre-flight
+            if incoming_bytes > 0:
+                await file_service.check_upload_quota_preflight(
+                    user_email, req_data.path, file_name, incoming_bytes
+                )
+
         url_signer: UrlSigner = request.app["url_signer"]
 
         # Generate a unique inner name for storage

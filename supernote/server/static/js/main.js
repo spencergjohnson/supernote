@@ -7,6 +7,7 @@ import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
 import SearchPanel from './components/SearchPanel.js';
 import DashboardPanel from './components/DashboardPanel.js';
+import RecyclePanel from './components/RecyclePanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
 
@@ -18,6 +19,7 @@ createApp({
         SystemPanel,
         SearchPanel,
         DashboardPanel,
+        RecyclePanel,
         MoveModal,
         RenameModal
     },
@@ -28,6 +30,7 @@ createApp({
         const showSystemPanel = ref(false);
         const showSearchPanel = ref(false);
         const showDashboardPanel = ref(false);
+        const showRecyclePanel = ref(false);
         const progress = ref(null); // aggregate indexing progress
 
         // UI State
@@ -284,6 +287,7 @@ createApp({
             showSystemPanel,
             showSearchPanel,
             showDashboardPanel,
+            showRecyclePanel,
             progress,
             indexingBusy,
             progressPercent,

@@ -1,5 +1,7 @@
 import hashlib
+import logging
 import secrets
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,6 +9,8 @@ from typing import AsyncGenerator
 
 import aiofiles
 import aiofiles.os
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,6 +75,18 @@ class BlobStorage(ABC):
     @abstractmethod
     def get_blob_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob (optional, useful for serving files)."""
+        pass
+
+    @abstractmethod
+    async def cleanup_temp(self, max_age_seconds: int) -> int:
+        """Remove stale temp staging files older than max_age_seconds (by mtime).
+
+        Only removes *.tmp files directly under the temp directory — never
+        touches committed blobs. Swallows FileNotFoundError per file (race-safe
+        against concurrent uploads completing).
+
+        Returns the count of files removed.
+        """
         pass
 
 
@@ -212,3 +228,46 @@ class LocalBlobStorage(BlobStorage):
     def get_blob_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""
         return self._get_path(bucket, key)
+
+    async def cleanup_temp(self, max_age_seconds: int) -> int:
+        """Remove stale *.tmp staging files older than max_age_seconds (by mtime).
+
+        Safety rules enforced here:
+        - Only considers *.tmp files directly under <root>/temp (no recursion).
+        - Checks mtime: a file being actively written keeps a fresh mtime and is
+          therefore always spared, provided max_age_seconds is comfortably larger
+          than the longest plausible upload duration.
+        - Swallows FileNotFoundError per file (race-safe: put() may rename the
+          file to its final location concurrently).
+        """
+        temp_dir = self.root / "temp"
+        if not await aiofiles.os.path.exists(temp_dir):
+            return 0
+
+        try:
+            entries = await aiofiles.os.listdir(temp_dir)
+        except FileNotFoundError:
+            return 0
+
+        now = time.time()
+        removed = 0
+        for name in entries:
+            if not name.endswith(".tmp"):
+                continue
+            path = temp_dir / name
+            try:
+                stat_result = await aiofiles.os.stat(path)
+                age = now - stat_result.st_mtime
+                if age > max_age_seconds:
+                    await aiofiles.os.remove(path)
+                    removed += 1
+                    logger.debug(
+                        f"cleanup_temp: removed stale temp file {name} (age={age:.0f}s)"
+                    )
+            except FileNotFoundError:
+                pass  # Completed upload renamed it away — expected, ignore
+            except Exception:
+                logger.warning(
+                    f"cleanup_temp: error processing {path}", exc_info=True
+                )
+        return removed

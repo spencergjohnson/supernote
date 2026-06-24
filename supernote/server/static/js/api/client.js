@@ -646,6 +646,77 @@ export async function search(query, opts = {}) {
 }
 
 /**
+ * Fetch recycle bin contents.
+ * @returns {Promise<Object>} RecycleFileListVO with items and totalSize.
+ */
+export async function fetchRecycleList(pageNo = 1, pageSize = 50) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/recycle/list/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify({ pageNo, pageSize })
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to fetch recycle bin: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Restore items from the recycle bin.
+ * @param {number[]} idList - Recycle entry IDs to restore.
+ */
+export async function revertRecycle(idList) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/recycle/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify({ idList })
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to restore items: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Permanently delete items from the recycle bin.
+ * @param {number[]} idList - Recycle entry IDs to permanently delete.
+ */
+export async function deleteRecycle(idList) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/recycle/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify({ idList })
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to delete items: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Empty the entire recycle bin.
+ */
+export async function clearRecycle() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/recycle/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify({})
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to clear recycle bin: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
  * Fetch aggregated dashboard/insights stats for the current user.
  * @returns {Promise<Object>} The dashboard stats VO.
  */
