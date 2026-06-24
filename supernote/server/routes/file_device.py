@@ -71,6 +71,25 @@ def _to_entries_vo(entity: FileEntity) -> EntriesVO:
 SYNC_LOCK_TIMEOUT = 300  # 5 minutes
 
 
+def _sync_init_key(user: str) -> str:
+    """KV key that tracks whether the user has completed at least one full sync.
+
+    Stored in the same DB as user files, so wiping the DB (server reset)
+    also clears this marker.  The absence of the marker forces init mode
+    (synType=False) which makes the device upload rather than delete.
+    """
+    return f"sync_initialized:{user}"
+
+
+def _is_success_flag(flag: str | None) -> bool:
+    """Return True when the sync end flag signals a successful sync.
+
+    The device sends "true"/"false" normally but "N" was observed in
+    failed-sync.md when a sync did not complete cleanly.
+    """
+    return bool(flag and flag.strip().lower() in {"true", "t", "y", "1"})
+
+
 @routes.post("/api/file/2/files/synchronous/start")
 async def handle_sync_start(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/start
@@ -79,11 +98,21 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     req_data = SynchronousStartLocalDTO.from_dict(await request.json())
     user_email = request["user"]
     sync_locks = request.app["sync_locks"]
-    sync_locks = request.app["sync_locks"]
     file_service: FileService = request.app["file_service"]
+    coordination_service = request.app["coordination_service"]
 
     try:
         is_empty = await file_service.is_empty(user_email)
+
+        # Only allow differential sync (synType=True) when the server has
+        # files AND we know the device previously completed a full init sync.
+        # If the DB was wiped (reset), the marker is gone and we stay in init
+        # mode until the device finishes a full re-upload, preventing the
+        # device from treating its own files as remote deletions.
+        initialized = (
+            await coordination_service.get_value(_sync_init_key(user_email)) == "1"
+        )
+        syn_type = (not is_empty) and initialized
 
         now = time.time()
         if user_email in sync_locks:
@@ -105,7 +134,7 @@ async def handle_sync_start(request: web.Request) -> web.Response:
         return web.json_response(
             SynchronousStartLocalVO(
                 equipment_no=req_data.equipment_no,
-                syn_type=not is_empty,
+                syn_type=syn_type,
             ).to_dict()
         )
     except SupernoteError as err:
@@ -128,6 +157,12 @@ async def handle_sync_end(request: web.Request) -> web.Response:
         owner_eq, _ = sync_locks[user_email]
         if owner_eq == req_data.equipment_no:
             del sync_locks[user_email]
+
+    # Mark this user as having completed at least one successful sync so that
+    # future starts are allowed to use differential mode (synType=True).
+    if _is_success_flag(req_data.flag):
+        coordination_service = request.app["coordination_service"]
+        await coordination_service.set_value(_sync_init_key(user_email), "1")
 
     return web.json_response(SynchronousEndLocalVO().to_dict())
 

@@ -281,6 +281,45 @@ note.to_pdf("journal.pdf") # Multi-layer PDF conversion
 
 The notebook parser is a fork of the excellent [supernote-tool](https://github.com/jya-dev/supernote-tool) with updated dependencies and modern type hints.
 
+## Resetting the Server Safely
+
+Sometimes you need a clean slate — for example, to migrate data, troubleshoot a corrupt database, or start fresh. **Do not run manual `rm` commands against the data directory while the container is running**, and do not delete the DB without stopping the container first, because the device may sync immediately after and receive unexpected state.
+
+Use the provided script instead:
+
+```bash
+./reset-local.sh
+```
+
+The script will:
+1. Print a summary of what will be deleted and ask you to type `reset` to confirm.
+2. Create a timestamped backup under `data/backups/` before deleting anything.
+3. Stop and remove the `supernote-server` container.
+4. Delete only the database (`data/system/supernote.db`), uploaded files (`data/supernote-user-data/`), and derived caches (`data/supernote-cache/`).
+5. **Preserve** `data/config/.jwt_secret` so existing device logins remain valid.
+6. Print next steps.
+
+```bash
+./reset-local.sh -y            # skip confirmation (e.g. in scripts)
+./reset-local.sh --no-backup   # skip backup (faster, irreversible)
+
+# Override paths/container name
+DATA_DIR=/mnt/nas/supernote CONTAINER_NAME=sn ./reset-local.sh
+```
+
+### What happens on the next device sync after a reset
+
+The server uses a two-part gate to decide the sync mode (`synType`):
+
+| Condition | `synType` | Device behaviour |
+|-----------|-----------|-----------------|
+| Server DB is empty **or** no successful sync has been recorded yet | `false` (init mode) | Device **uploads** its files — nothing is deleted |
+| Server has files **and** a previous sync completed successfully | `true` (differential) | Normal incremental sync |
+
+Resetting the DB clears both the file records and the "sync completed" marker, so the server stays in safe init mode until the device finishes its first full re-upload. **The device is always the source of truth after a reset.**
+
+> **Why this matters:** the incident that prompted this section occurred because the old logic counted folders toward "non-empty", so a reset followed by an interrupted first sync could flip the server into differential mode prematurely — causing the device to treat its own unsynced files as remote deletions and wipe them. Both that folder-counting bug and the underlying race are now fixed and covered by regression tests.
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details on:
