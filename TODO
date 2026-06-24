@@ -1,1 +1,0 @@
-It would be cool if it would pull the local models on initial startup and let you choose which vision model you want to use / also what summary model you want to use. This could also be in the frontend. Just something that is "smart" and knows which local models are vision capable etc
