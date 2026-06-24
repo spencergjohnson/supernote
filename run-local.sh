@@ -7,8 +7,13 @@
 # Usage:
 #   ./run-local.sh
 #
+# For the reference llama-swap + llama.cpp inference backend (GPU required), start
+# it first with:
+#   ./llama-swap/start.sh
+# See llama-swap/README.md for model downloads, GPU setup, and configuration.
+#
 # Override any of these via environment variables, e.g.:
-#   LLM_URL=http://host.docker.internal:8090 LLM_MODEL=qwen2.5-vl-7b ./run-local.sh
+#   LLM_URL=http://host.docker.internal:11434 LLM_MODEL=llava ./run-local.sh
 #
 set -euo pipefail
 

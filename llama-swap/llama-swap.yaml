@@ -1,0 +1,55 @@
+healthCheckTimeout: 120
+models:
+  # Vision-capable chat model — used by supernote for OCR and note summaries.
+  # Matches the LLM_MODEL default in run-local.sh.
+  qwen2.5-vl-7b:
+    cmd: '/app/llama-server
+
+      -m /models/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+
+      --mmproj /models/Qwen2.5-VL-7B-Instruct-mmproj-F16.gguf
+
+      --host 0.0.0.0 --port ${PORT}
+
+      -ngl 999
+
+      -c 131072
+
+      -ctk q8_0 -ctv q8_0
+
+      --flash-attn on
+
+      --jinja
+
+      --alias qwen2.5-vl-7b
+
+      '
+    ttl: 3600
+    metadata:
+      contextLength: 131072
+      architecture: qwen2.5vl
+      capabilities:
+      - completion
+      - tools
+      - vision
+
+  # Embedding model — used by supernote for semantic search.
+  # Matches the EMBEDDING_MODEL default in run-local.sh.
+  qwen3-embedding-8b:
+    cmd: '/app/llama-server
+      -m /models/embeddings/Qwen3-Embedding-8B-f16.gguf
+      --embedding
+      --host 0.0.0.0 --port ${PORT}
+      -ngl 999
+      -c 32768
+      -ctk q8_0 -ctv q8_0
+      --flash-attn on
+      --jinja
+      --alias qwen3-embedding-8b
+      '
+    ttl: 3600
+    metadata:
+      contextLength: 32768
+      architecture: qwen3
+      capabilities:
+      - embedding

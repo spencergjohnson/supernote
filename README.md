@@ -97,6 +97,12 @@ By default the synthesis engine uses Google Gemini, but you can run the **entire
 
 Any inference server that exposes the standard OpenAI endpoints (`POST /v1/chat/completions` and `POST /v1/embeddings`) works out of the box, including [llama-swap](https://github.com/mostlygeek/llama-swap), [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), and [vLLM](https://github.com/vllm-project/vllm). You will need two models available: a **vision-capable** chat model for OCR and summaries (e.g. `qwen2.5-vl-7b`, `llava`) and an embedding model for semantic search (e.g. `qwen3-embedding-8b`, `mxbai-embed-large`).
 
+> [!NOTE]
+> This repo includes a ready-to-use Dockerized llama-swap + llama.cpp backend under
+> [`llama-swap/`](llama-swap/README.md) (NVIDIA GPU required). It ships pre-configured
+> for the two models supernote needs. See [llama-swap/README.md](llama-swap/README.md)
+> for setup instructions.
+
 ### Configuration
 
 Local mode is controlled by four settings. Each can be set as an environment variable or in `config.yaml`; environment variables take precedence.
@@ -104,24 +110,23 @@ Local mode is controlled by four settings. Each can be set as an environment var
 | Environment Variable | Config Key | Description |
 |----------------------|------------|-------------|
 | `SUPERNOTE_LOCAL_MODE` | `local_mode` | Set to `true` to enable local mode and disable Gemini. |
-| `SUPERNOTE_LOCAL_LLM_URL` | `local_llm_url` | Base URL of your OpenAI-compatible server. Use a port other than `8080`. |
+| `SUPERNOTE_LOCAL_LLM_URL` | `local_llm_url` | Base URL of your OpenAI-compatible server (e.g. `http://llamaswap:8080` when using the in-repo Docker setup, or `http://localhost:11434` for Ollama). |
 | `SUPERNOTE_LOCAL_LLM_MODEL` | `local_llm_model` | Model name for chat completions. **Must be vision-capable** for OCR. |
 | `SUPERNOTE_LOCAL_EMBEDDING_MODEL` | `local_embedding_model` | Model name for semantic search embeddings. |
 
 ### Quick Start
 
 ```bash
-# Option A: llama-swap (hot-swaps llama.cpp models on :8090)
-llama-swap --config llama-swap-config.yaml --port 8090
-export SUPERNOTE_LOCAL_LLM_URL=http://localhost:8090
-export SUPERNOTE_LOCAL_LLM_MODEL=qwen2.5-vl-7b
+# Option A: llama-swap via Docker (in-repo setup — GPU recommended)
+# See llama-swap/README.md for model downloads and GPU setup.
+./llama-swap/start.sh
+# Then run supernote (reaches llamaswap over the shared Docker network):
+./run-local.sh
 
-# Option B: Ollama (OpenAI-compatible API on :11434)
+# Option B: Ollama
 ollama pull llava && ollama pull qwen3-embedding-8b
 export SUPERNOTE_LOCAL_LLM_URL=http://localhost:11434
 export SUPERNOTE_LOCAL_LLM_MODEL=llava
-
-# Then enable local mode and serve (shared by both options)
 export SUPERNOTE_LOCAL_MODE=true
 export SUPERNOTE_LOCAL_EMBEDDING_MODEL=qwen3-embedding-8b
 supernote serve
@@ -201,10 +206,10 @@ docker run -d \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   --network supernote-net \
-  -p 8080:8080 -p 8081:8081 \
+  -p 9991:8080 -p 8081:8081 \
   -v "$(pwd)/data:/data" \
   -e SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)" \
-  -e SUPERNOTE_BASE_URL="http://localhost:8080" \
+  -e SUPERNOTE_BASE_URL="http://localhost:9991" \
   -e SUPERNOTE_LOCAL_MODE=true \
   -e SUPERNOTE_LOCAL_LLM_URL="http://llamaswap:8080" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="qwen2.5-vl-7b" \
@@ -230,15 +235,19 @@ docker run -d \
 > `supernote-net`, and must rejoin it if recreated (add
 > `docker network connect supernote-net <name>` to its startup script). For Ollama
 > use `http://ollama:11434` with `llava`.
+>
+> Host port `9991` is used to avoid conflicting with the llama-swap container, which
+> also publishes port `8080` on the host. supernote reaches llama-swap by container
+> name over `supernote-net`, so its host port does not matter.
 
 Then create your admin user and connect the device:
 
 ```bash
 docker exec -it supernote-server \
-  supernote admin --url http://localhost:8080 user add you@example.com
+  supernote admin --url http://localhost:9991 user add you@example.com
 ```
 
-On the Supernote: **Settings > Sync > Private Cloud**, enter `http://<your-lan-ip>:8080`,
+On the Supernote: **Settings > Sync > Private Cloud**, enter `http://<your-lan-ip>:9991`,
 and log in with that email/password.
 
 See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for details.

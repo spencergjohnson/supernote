@@ -55,9 +55,12 @@ auth:
 # local_mode: true
 
 # Base URL of your OpenAI-compatible inference server (e.g. llama-swap or Ollama).
-# Must expose /v1/chat/completions and /v1/embeddings. Use a port other than 8080 to
-# avoid conflicting with the Supernote server itself (which also defaults to 8080).
-# local_llm_url: http://localhost:8090
+# Must expose /v1/chat/completions and /v1/embeddings.
+# When using the in-repo llama-swap Docker setup (llama-swap/start.sh), address it
+# by container name over the shared Docker network:
+# local_llm_url: http://llamaswap:8080
+# For Ollama on the same host:
+# local_llm_url: http://localhost:11434
 
 # Model name used for OCR and summary chat completions (must be vision-capable for OCR).
 # local_llm_model: qwen2.5-vl-7b
