@@ -464,11 +464,29 @@ class VirtualFileSystem:
         return total or 0
 
     async def is_empty(self, user_id: int) -> bool:
-        """Check if user has any active files."""
+        """Check whether the user has any active *files* on the server.
+
+        Folders are intentionally excluded. This result drives the sync
+        ``synType`` flag (``synType = not is_empty``):
+
+        - ``synType=False`` -> initialization mode (device uploads to server)
+        - ``synType=True``  -> differential sync (server data is authoritative)
+
+        If we counted folders here, a server that holds only the default
+        folder skeleton (e.g. after a fresh init sync that created folders but
+        no files yet) would report non-empty, flip ``synType`` to ``True``, and
+        the device would interpret its missing files as remote deletions and
+        wipe them locally. Counting only files keeps a file-less server in the
+        safe initialization mode.
+        """
         # Use limit 1 for efficiency
         stmt = (
             select(UserFileDO.id)
-            .where(UserFileDO.user_id == user_id, UserFileDO.is_active == "Y")
+            .where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.is_active == "Y",
+                UserFileDO.is_folder == "N",
+            )
             .limit(1)
         )
         result = await self.db.execute(stmt)
