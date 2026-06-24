@@ -12,6 +12,60 @@ from supernote.server.config import ServerConfig
 
 logger = logging.getLogger(__name__)
 
+_RETRYABLE = (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError)
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    payload: dict[str, Any],
+    *,
+    attempts: int = 3,
+    base_delay: float = 1.0,
+) -> httpx.Response:
+    """POST *url* with *payload*, retrying on transient errors.
+
+    Retries on connection errors, timeouts, and 5xx responses using
+    exponential backoff.  4xx responses are re-raised immediately.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            resp = await client.post(url, json=payload)
+            if resp.status_code < 500:
+                return resp
+            # Treat 5xx as transient — raise only on last attempt
+            last_exc = httpx.HTTPStatusError(
+                f"Server error '{resp.status_code}' for url '{url}'",
+                request=resp.request,
+                response=resp,
+            )
+            if attempt < attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "Transient %s from %s (attempt %d/%d); retrying in %.1fs",
+                    resp.status_code,
+                    url,
+                    attempt + 1,
+                    attempts,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        except _RETRYABLE as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "Transient error calling %s (attempt %d/%d): %s; retrying in %.1fs",
+                    url,
+                    attempt + 1,
+                    attempts,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
 
 @dataclass
 class LocalGenerateContentResponse:
@@ -109,9 +163,10 @@ class LocalLLMService:
 
         async with self._get_semaphore():
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-                resp = await client.post(
+                resp = await _post_with_retry(
+                    client,
                     f"{self.base_url}/v1/chat/completions",
-                    json=payload,
+                    payload,
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -136,9 +191,10 @@ class LocalLLMService:
 
         async with self._get_semaphore():
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-                resp = await client.post(
+                resp = await _post_with_retry(
+                    client,
                     f"{self.base_url}/v1/embeddings",
-                    json=payload,
+                    payload,
                 )
                 resp.raise_for_status()
                 data = resp.json()
