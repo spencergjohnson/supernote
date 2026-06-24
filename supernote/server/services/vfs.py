@@ -452,6 +452,38 @@ class VirtualFileSystem:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_aggregated_folder_sizes(self, user_id: int) -> dict[int, int]:
+        """Return a map of folder_id -> total descendant file bytes for all folders owned by user."""
+        stmt = select(
+            UserFileDO.id,
+            UserFileDO.directory_id,
+            UserFileDO.is_folder,
+            UserFileDO.size,
+        ).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.is_active == "Y",
+        )
+        rows = (await self.db.execute(stmt)).all()
+
+        children: dict[int, list] = {}
+        for r in rows:
+            children.setdefault(r.directory_id, []).append(r)
+
+        sizes: dict[int, int] = {}
+
+        def dfs(folder_id: int) -> int:
+            total = 0
+            for c in children.get(folder_id, []):
+                total += dfs(c.id) if c.is_folder == "Y" else (c.size or 0)
+            sizes[folder_id] = total
+            return total
+
+        for r in rows:
+            if r.is_folder == "Y" and r.id not in sizes:
+                dfs(r.id)
+
+        return sizes
+
     async def get_total_usage(self, user_id: int) -> int:
         """Calculate total storage usage for a user in bytes."""
         stmt = select(func.sum(UserFileDO.size)).where(

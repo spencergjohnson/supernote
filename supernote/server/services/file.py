@@ -875,11 +875,19 @@ class FileService:
             vfs = VirtualFileSystem(session)
             items = await vfs.list_directory(user_id, directory_id)
 
-            # Mapping to FileEntity
+            folder_sizes = (
+                await vfs.get_aggregated_folder_sizes(user_id)
+                if any(i.is_folder == "Y" for i in items)
+                else {}
+            )
+
             file_entities: list[FileEntity] = []
             for item in items:
                 full_path = await vfs.get_full_path(user_id, item.id)
-                file_entities.append(_to_file_entity(item, full_path))
+                entity = _to_file_entity(item, full_path)
+                if entity.is_folder:
+                    entity.size = folder_sizes.get(item.id, 0)
+                file_entities.append(entity)
 
             return file_entities
 

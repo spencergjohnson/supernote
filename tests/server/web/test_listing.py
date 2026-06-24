@@ -284,8 +284,8 @@ async def test_user_file_vo_all_fields_for_folder(
 
     assert folder_vo.file_name == folder_name
 
-    # Folders should have None or 0 for size
-    assert folder_vo.size is None or folder_vo.size == 0
+    # Empty folders report 0 bytes (aggregated from descendants)
+    assert folder_vo.size == 0
 
     # Folders should have None for md5
     assert folder_vo.md5 is None
@@ -380,3 +380,39 @@ async def test_list_query_flattening(
 
     doc_folder = next(f for f in res.user_file_vo_list if f.file_name == "Document")
     assert doc_folder.directory_id == "0"
+
+
+async def test_folder_size_aggregation(
+    web_client: WebClient,
+) -> None:
+    """Folder size in the listing equals the sum of all descendant file bytes."""
+    # Create: Root -> Parent -> Child (subfolder) -> grandchild.txt
+    #                         -> file_in_parent.txt
+    parent_vo = await web_client.create_folder(parent_id=0, name="SizeTestParent")
+    parent_id = int(parent_vo.id)
+
+    child_vo = await web_client.create_folder(parent_id=parent_id, name="SizeTestChild")
+    child_id = int(child_vo.id)
+
+    content_a = b"hello"
+    content_b = b"world!!"
+
+    await web_client.upload_file(parent_id=parent_id, name="file_in_parent.txt", content=content_a)
+    await web_client.upload_file(parent_id=child_id, name="grandchild.txt", content=content_b)
+
+    expected_parent_size = len(content_a) + len(content_b)
+    expected_child_size = len(content_b)
+
+    # Parent folder listing
+    res = await web_client.list_query(directory_id=0)
+    parent_folder_vo = next(
+        f for f in res.user_file_vo_list if f.file_name == "SizeTestParent"
+    )
+    assert parent_folder_vo.size == expected_parent_size
+
+    # Child folder listing (inside parent)
+    res_parent = await web_client.list_query(directory_id=parent_id)
+    child_folder_vo = next(
+        f for f in res_parent.user_file_vo_list if f.file_name == "SizeTestChild"
+    )
+    assert child_folder_vo.size == expected_child_size
