@@ -128,7 +128,8 @@ class FileProcessingStatusVO(BaseResponse):
 class SearchResultVO(DataClassJSONMixin):
     """VO for a single semantic search result."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    # Serialized as a string so 64-bit IDs survive JS JSON.parse precision.
+    file_id: str = field(metadata=field_options(alias="fileId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     page_id: str = field(metadata=field_options(alias="pageId"))
@@ -277,7 +278,8 @@ class ActivityBucketVO(DataClassJSONMixin):
 class TopNotebookVO(DataClassJSONMixin):
     """A notebook ranked by how many transcribed pages it contains."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    # Serialized as a string so 64-bit IDs survive JS JSON.parse precision.
+    file_id: str = field(metadata=field_options(alias="fileId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
     page_count: int = field(metadata=field_options(alias="pageCount"), default=0)
 

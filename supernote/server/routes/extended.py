@@ -237,7 +237,7 @@ async def handle_extended_search(request: web.Request) -> web.Response:
 
         vo_results = [
             SearchResultVO(
-                file_id=r.file_id,
+                file_id=str(r.file_id),
                 file_name=r.file_name,
                 page_index=r.page_index,
                 page_id=r.page_id,
@@ -401,7 +401,7 @@ async def handle_dashboard(request: web.Request) -> web.Response:
     ]
     top_notebooks = [
         TopNotebookVO(
-            file_id=file_id,
+            file_id=str(file_id),
             file_name=notebook_names.get(file_id, str(file_id)),
             page_count=count,
         )
