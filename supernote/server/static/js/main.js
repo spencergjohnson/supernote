@@ -1,10 +1,12 @@
 import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
-import { setToken, getToken, login, logout, fetchProcessingStatus } from './api/client.js';
+import { setToken, getToken, login, logout, fetchProcessingStatus, fetchProgress } from './api/client.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
+import SearchPanel from './components/SearchPanel.js';
+import DashboardPanel from './components/DashboardPanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
 
@@ -14,6 +16,8 @@ createApp({
         LoginCard,
         FileViewer,
         SystemPanel,
+        SearchPanel,
+        DashboardPanel,
         MoveModal,
         RenameModal
     },
@@ -22,6 +26,9 @@ createApp({
         const isLoggedIn = ref(false);
         const loginError = ref(null);
         const showSystemPanel = ref(false);
+        const showSearchPanel = ref(false);
+        const showDashboardPanel = ref(false);
+        const progress = ref(null); // aggregate indexing progress
 
         // UI State
         const showNewFolderModal = ref(false);
@@ -65,6 +72,25 @@ createApp({
                 view.value = 'viewer';
             }
         }
+
+        function openFileFromPanel(file) {
+            showSearchPanel.value = false;
+            showDashboardPanel.value = false;
+            selectedFile.value = file;
+            view.value = 'viewer';
+        }
+
+        // Aggregate indexing progress (true when work is in-flight or failed).
+        const indexingBusy = computed(() => {
+            const p = progress.value;
+            if (!p) return false;
+            return (p.processing || 0) > 0 || (p.pending || 0) > 0;
+        });
+        const progressPercent = computed(() => {
+            const p = progress.value;
+            if (!p || !p.total) return 0;
+            return Math.round((p.completed / p.total) * 100);
+        });
 
         async function navigateTo(index) {
             const crumbs = breadcrumbs.value.slice(0, index + 1);
@@ -200,8 +226,21 @@ createApp({
             logout();
         }
 
+        async function refreshProgress() {
+            if (!isLoggedIn.value) return;
+            try {
+                progress.value = await fetchProgress();
+            } catch (e) {
+                console.error("Failed to poll progress:", e);
+            }
+        }
+
         onMounted(async () => {
             await resumeSession();
+
+            // Aggregate indexing progress (header pill)
+            await refreshProgress();
+            setInterval(refreshProgress, 5000);
 
             // Polling for processing status
             setInterval(async () => {
@@ -243,6 +282,12 @@ createApp({
             navigateTo,
             selectedFile,
             showSystemPanel,
+            showSearchPanel,
+            showDashboardPanel,
+            progress,
+            indexingBusy,
+            progressPercent,
+            openFileFromPanel,
 
             // New States
             showNewFolderModal,

@@ -578,3 +578,97 @@ export async function fetchProcessingStatus(fileIds) {
         statusMap: data.statusMap
     };
 }
+
+/**
+ * Fetch aggregate sync/indexing progress across all processing tasks.
+ * @returns {Promise<Object>} The system progress VO.
+ */
+export async function fetchProgress() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/progress', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        }
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch progress: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Semantic search across notebook content.
+ * @param {string} query
+ * @param {Object} [opts] Optional filters: { topN, nameFilter, dateAfter, dateBefore }
+ * @returns {Promise<Array<Object>>} List of search result VOs.
+ */
+export async function search(query, opts = {}) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            query,
+            topN: opts.topN ?? 15,
+            nameFilter: opts.nameFilter ?? null,
+            dateAfter: opts.dateAfter ?? null,
+            dateBefore: opts.dateBefore ?? null
+        })
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Search failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results || [];
+}
+
+/**
+ * Fetch aggregated dashboard/insights stats for the current user.
+ * @returns {Promise<Object>} The dashboard stats VO.
+ */
+export async function fetchDashboard() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/dashboard', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        }
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch dashboard: ${response.statusText}`);
+    }
+
+    return await response.json();
+}

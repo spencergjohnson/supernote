@@ -200,3 +200,144 @@ class WebTranscriptResponseVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class TaskTypeProgressVO(DataClassJSONMixin):
+    """Progress breakdown for a single processing task type."""
+
+    task_type: str = field(metadata=field_options(alias="taskType"))
+    """The task type (e.g. 'OCR', 'EMBED', 'PNG', 'SUMMARY')."""
+
+    total: int = 0
+    """Total number of tasks of this type."""
+
+    completed: int = 0
+    """Number of completed tasks."""
+
+    processing: int = 0
+    """Number of in-progress tasks."""
+
+    pending: int = 0
+    """Number of pending tasks."""
+
+    failed: int = 0
+    """Number of failed tasks."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class SystemProgressVO(BaseResponse):
+    """Aggregate processing/indexing progress across all tasks.
+
+    Used by: GET /api/extended/system/progress
+    """
+
+    total: int = 0
+    """Total number of tracked tasks."""
+
+    completed: int = 0
+    """Tasks in COMPLETED status."""
+
+    processing: int = 0
+    """Tasks in PROCESSING status."""
+
+    pending: int = 0
+    """Tasks in PENDING status."""
+
+    failed: int = 0
+    """Tasks in FAILED status."""
+
+    by_type: list[TaskTypeProgressVO] = field(
+        metadata=field_options(alias="byType"), default_factory=list
+    )
+    """Per-task-type progress breakdown."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ActivityBucketVO(DataClassJSONMixin):
+    """Number of pages attributed to a calendar month (inferred from page IDs)."""
+
+    period: str
+    """The month in YYYY-MM form."""
+
+    count: int = 0
+    """Number of pages dated within this month."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TopNotebookVO(DataClassJSONMixin):
+    """A notebook ranked by how many transcribed pages it contains."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    page_count: int = field(metadata=field_options(alias="pageCount"), default=0)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TagCountVO(DataClassJSONMixin):
+    """A tag and the number of summaries it appears on."""
+
+    name: str
+    count: int = 0
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class DashboardStatsVO(BaseResponse):
+    """Aggregated insights about a user's notebook library.
+
+    Used by: GET /api/extended/dashboard
+    """
+
+    notebook_count: int = field(
+        metadata=field_options(alias="notebookCount"), default=0
+    )
+    """Number of .note files owned by the user."""
+
+    page_count: int = field(metadata=field_options(alias="pageCount"), default=0)
+    """Total number of pages tracked across all notebooks."""
+
+    pages_with_text: int = field(
+        metadata=field_options(alias="pagesWithText"), default=0
+    )
+    """Number of pages that have OCR text."""
+
+    pages_embedded: int = field(
+        metadata=field_options(alias="pagesEmbedded"), default=0
+    )
+    """Number of pages that have a stored embedding vector."""
+
+    summary_count: int = field(metadata=field_options(alias="summaryCount"), default=0)
+    """Number of AI summaries generated."""
+
+    activity_by_month: list[ActivityBucketVO] = field(
+        metadata=field_options(alias="activityByMonth"), default_factory=list
+    )
+    """Pages per calendar month, inferred from page IDs (chronological)."""
+
+    top_notebooks: list[TopNotebookVO] = field(
+        metadata=field_options(alias="topNotebooks"), default_factory=list
+    )
+    """Notebooks with the most transcribed pages."""
+
+    top_tags: list[TagCountVO] = field(
+        metadata=field_options(alias="topTags"), default_factory=list
+    )
+    """Most frequent summary tags."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
