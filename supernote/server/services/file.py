@@ -903,13 +903,23 @@ class FileService:
                     )
                 ]
             )
-            note = load_notebook(BytesIO(blob_content))
+            try:
+                note = load_notebook(BytesIO(blob_content), policy="loose")  # type: ignore[no-untyped-call]
+            except Exception as e:
+                logger.error(f"Failed to parse .note file for file_id={file_id}: {e}")
+                raise
 
             # Convert each page to PNG
             converter = ImageConverter(note)  # type: ignore[no-untyped-call]
             results = []
             for i in range(note.get_total_pages()):
-                img = converter.convert(i)  # type: ignore[no-untyped-call]
+                try:
+                    img = converter.convert(i)  # type: ignore[no-untyped-call]
+                except Exception as e:
+                    logger.error(
+                        f"Failed to render page {i} of file_id={file_id}, skipping: {e}"
+                    )
+                    continue
                 img_io = BytesIO()
                 img.save(img_io, format="PNG")
                 img_bytes = img_io.getvalue()
@@ -951,7 +961,11 @@ class FileService:
                     )
                 ]
             )
-            note = load_notebook(BytesIO(blob_content))
+            try:
+                note = load_notebook(BytesIO(blob_content), policy="loose")  # type: ignore[no-untyped-call]
+            except Exception as e:
+                logger.error(f"Failed to parse .note file for file_id={file_id}: {e}")
+                raise
 
             # 2. Convert to PDF
             converter = PdfConverter(note)
