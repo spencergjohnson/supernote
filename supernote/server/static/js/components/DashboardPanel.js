@@ -5,16 +5,16 @@ export default {
     emits: ['close', 'open-file'],
     template: `
         <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4" @click.self="$emit('close')">
-            <div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
+            <div class="bg-slate-50 dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
                 <!-- Header -->
-                <div class="flex items-center justify-between p-4 border-b border-slate-200 bg-white rounded-t-2xl">
-                    <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-t-2xl">
+                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                         </svg>
                         Insights
                     </h2>
-                    <button @click="$emit('close')" class="text-slate-400 hover:text-slate-600">
+                    <button @click="$emit('close')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -26,48 +26,48 @@ export default {
                     <div v-if="loading" class="flex justify-center p-20">
                         <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
                     </div>
-                    <div v-else-if="error" class="p-4 bg-rose-50 text-rose-700 rounded-xl">{{ error }}</div>
+                    <div v-else-if="error" class="p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 rounded-xl">{{ error }}</div>
 
                     <template v-else-if="stats">
                         <!-- Stat cards -->
                         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-                                <p class="text-3xl font-bold text-slate-800">{{ stats.notebookCount }}</p>
-                                <p class="text-sm text-slate-500 mt-1">Notebooks</p>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <p class="text-3xl font-bold text-slate-800 dark:text-slate-100">{{ stats.notebookCount }}</p>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Notebooks</p>
                             </div>
-                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-                                <p class="text-3xl font-bold text-slate-800">{{ stats.pageCount }}</p>
-                                <p class="text-sm text-slate-500 mt-1">Pages</p>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <p class="text-3xl font-bold text-slate-800 dark:text-slate-100">{{ stats.pageCount }}</p>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Pages</p>
                             </div>
-                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-                                <p class="text-3xl font-bold text-slate-800">{{ stats.pagesWithText }}</p>
-                                <p class="text-sm text-slate-500 mt-1">Transcribed</p>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <p class="text-3xl font-bold text-slate-800 dark:text-slate-100">{{ stats.pagesWithText }}</p>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Transcribed</p>
                             </div>
-                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-                                <p class="text-3xl font-bold text-slate-800">{{ stats.summaryCount }}</p>
-                                <p class="text-sm text-slate-500 mt-1">Summaries</p>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <p class="text-3xl font-bold text-slate-800 dark:text-slate-100">{{ stats.summaryCount }}</p>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Summaries</p>
                             </div>
                         </div>
 
                         <!-- Coverage -->
-                        <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-                            <h3 class="text-sm font-semibold text-slate-700 mb-3">Indexing coverage</h3>
+                        <div class="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+                            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Indexing coverage</h3>
                             <div class="space-y-3">
                                 <div>
-                                    <div class="flex justify-between text-xs text-slate-500 mb-1">
+                                    <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
                                         <span>Transcribed (OCR)</span>
                                         <span>{{ stats.pagesWithText }} / {{ stats.pageCount }} ({{ pct(stats.pagesWithText) }}%)</span>
                                     </div>
-                                    <div class="w-full bg-slate-100 rounded-full h-2">
+                                    <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
                                         <div class="bg-indigo-500 h-2 rounded-full transition-all" :style="{ width: pct(stats.pagesWithText) + '%' }"></div>
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="flex justify-between text-xs text-slate-500 mb-1">
+                                    <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
                                         <span>Embedded (searchable)</span>
                                         <span>{{ stats.pagesEmbedded }} / {{ stats.pageCount }} ({{ pct(stats.pagesEmbedded) }}%)</span>
                                     </div>
-                                    <div class="w-full bg-slate-100 rounded-full h-2">
+                                    <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
                                         <div class="bg-emerald-500 h-2 rounded-full transition-all" :style="{ width: pct(stats.pagesEmbedded) + '%' }"></div>
                                     </div>
                                 </div>
@@ -75,37 +75,37 @@ export default {
                         </div>
 
                         <!-- Activity over time -->
-                        <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-                            <h3 class="text-sm font-semibold text-slate-700 mb-4">Writing activity by month
-                                <span class="font-normal text-slate-400">(inferred from page dates)</span>
+                        <div class="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+                            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Writing activity by month
+                                <span class="font-normal text-slate-400 dark:text-slate-500">(inferred from page dates)</span>
                             </h3>
-                            <div v-if="stats.activityByMonth.length === 0" class="text-sm text-slate-400 py-6 text-center">
+                            <div v-if="stats.activityByMonth.length === 0" class="text-sm text-slate-400 dark:text-slate-500 py-6 text-center">
                                 Not enough dated pages yet.
                             </div>
                             <div v-else class="flex items-end gap-1 h-40">
                                 <div v-for="b in stats.activityByMonth" :key="b.period"
-                                    class="flex-1 flex flex-col items-center justify-end group min-w-0" :title="b.period + ': ' + b.count + ' pages'">
+                                    class="flex-1 h-full flex flex-col items-center justify-end group min-w-0" :title="b.period + ': ' + b.count + ' pages'">
                                     <span class="text-[10px] text-slate-400 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">{{ b.count }}</span>
-                                    <div class="w-full bg-indigo-400 group-hover:bg-indigo-600 rounded-t transition-all"
+                                    <div class="w-full bg-indigo-400 dark:bg-indigo-500 group-hover:bg-indigo-600 dark:group-hover:bg-indigo-400 rounded-t transition-all"
                                         :style="{ height: barHeight(b.count) + '%' }"></div>
-                                    <span class="text-[9px] text-slate-400 mt-1 truncate w-full text-center">{{ shortMonth(b.period) }}</span>
+                                    <span class="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate w-full text-center">{{ shortMonth(b.period) }}</span>
                                 </div>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <!-- Top notebooks -->
-                            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-                                <h3 class="text-sm font-semibold text-slate-700 mb-4">Largest notebooks</h3>
-                                <div v-if="stats.topNotebooks.length === 0" class="text-sm text-slate-400">No notebooks yet.</div>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Largest notebooks</h3>
+                                <div v-if="stats.topNotebooks.length === 0" class="text-sm text-slate-400 dark:text-slate-500">No notebooks yet.</div>
                                 <ul v-else class="space-y-2">
                                     <li v-for="nb in stats.topNotebooks" :key="nb.fileId">
                                         <button @click="openNotebook(nb)" class="w-full text-left group">
                                             <div class="flex justify-between text-xs mb-1">
-                                                <span class="truncate text-slate-600 group-hover:text-indigo-700">{{ nb.fileName }}</span>
+                                                <span class="truncate text-slate-600 dark:text-slate-300 group-hover:text-indigo-700 dark:group-hover:text-indigo-400">{{ nb.fileName }}</span>
                                                 <span class="text-slate-400 flex-none ml-2">{{ nb.pageCount }}p</span>
                                             </div>
-                                            <div class="w-full bg-slate-100 rounded-full h-1.5">
+                                            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
                                                 <div class="bg-indigo-400 group-hover:bg-indigo-600 h-1.5 rounded-full transition-all"
                                                     :style="{ width: notebookPct(nb.pageCount) + '%' }"></div>
                                             </div>
@@ -115,14 +115,14 @@ export default {
                             </div>
 
                             <!-- Top tags -->
-                            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-                                <h3 class="text-sm font-semibold text-slate-700 mb-4">Top tags</h3>
-                                <div v-if="stats.topTags.length === 0" class="text-sm text-slate-400">No tags yet.</div>
+                            <div class="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Top tags</h3>
+                                <div v-if="stats.topTags.length === 0" class="text-sm text-slate-400 dark:text-slate-500">No tags yet.</div>
                                 <div v-else class="flex flex-wrap gap-2">
                                     <span v-for="t in stats.topTags" :key="t.name"
-                                        class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-sm"
+                                        class="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-sm"
                                         :style="{ fontSize: tagSize(t.count) + 'rem' }">
-                                        {{ t.name }} <span class="text-indigo-400">{{ t.count }}</span>
+                                        {{ t.name }} <span class="text-indigo-400 dark:text-indigo-500">{{ t.count }}</span>
                                     </span>
                                 </div>
                             </div>
@@ -131,8 +131,8 @@ export default {
                 </div>
 
                 <!-- Footer -->
-                <div class="p-4 border-t border-slate-200 bg-white rounded-b-2xl flex justify-end">
-                    <button @click="loadData" class="mr-2 px-4 py-2 bg-white border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 hover:bg-slate-50">Refresh</button>
+                <div class="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-b-2xl flex justify-end">
+                    <button @click="loadData" class="mr-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600">Refresh</button>
                     <button @click="$emit('close')" class="px-4 py-2 bg-indigo-600 rounded-lg shadow-sm text-sm font-medium text-white hover:bg-indigo-700">Close</button>
                 </div>
             </div>

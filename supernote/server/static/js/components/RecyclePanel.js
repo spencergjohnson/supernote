@@ -3,17 +3,17 @@ import { fetchRecycleList, revertRecycle, deleteRecycle, clearRecycle } from '..
 export default {
     name: 'RecyclePanel',
     template: `
-        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="$emit('close')">
-            <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="$emit('close')">
+            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
                 <!-- Header -->
-                <div class="flex items-center justify-between p-4 border-b">
+                <div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
                     <div>
-                        <h2 class="text-xl font-bold text-gray-800">Recycle Bin</h2>
-                        <p v-if="totalSize > 0" class="text-sm text-gray-500 mt-0.5">
+                        <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">Recycle Bin</h2>
+                        <p v-if="totalSize > 0" class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
                             {{ formatSize(totalSize) }} on disk
                         </p>
                     </div>
-                    <button @click="$emit('close')" class="text-gray-500 hover:text-gray-700">
+                    <button @click="$emit('close')" class="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -26,10 +26,10 @@ export default {
                         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                     </div>
 
-                    <div v-else-if="error" class="p-4 bg-red-50 text-red-700 rounded-lg">{{ error }}</div>
+                    <div v-else-if="error" class="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg">{{ error }}</div>
 
-                    <div v-else-if="items.length === 0" class="text-center py-12 text-gray-500">
-                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div v-else-if="items.length === 0" class="text-center py-12 text-slate-500 dark:text-slate-400">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
                             </path>
@@ -37,48 +37,48 @@ export default {
                         Recycle bin is empty
                     </div>
 
-                    <div v-else class="overflow-x-auto border rounded-lg">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
+                    <div v-else class="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                            <thead class="bg-slate-50 dark:bg-slate-700">
                                 <tr>
                                     <th class="px-4 py-3 text-left">
                                         <input type="checkbox" @change="toggleSelectAll" :checked="allSelected"
-                                            class="rounded border-gray-300 text-indigo-600">
+                                            class="rounded border-slate-300 dark:border-slate-500 text-indigo-600">
                                     </th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deleted</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Name</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Size</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Deleted</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <tr v-for="item in items" :key="item.fileId" class="hover:bg-gray-50">
+                            <tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                                <tr v-for="item in items" :key="item.fileId" class="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                     <td class="px-4 py-3">
                                         <input type="checkbox" :value="parseInt(item.fileId)"
-                                            v-model="selectedIds" class="rounded border-gray-300 text-indigo-600">
+                                            v-model="selectedIds" class="rounded border-slate-300 dark:border-slate-500 text-indigo-600">
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="flex items-center gap-2">
-                                            <svg v-if="item.isFolder === 'Y'" class="w-4 h-4 text-yellow-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                            <svg v-if="item.isFolder === 'Y'" class="w-4 h-4 text-amber-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path>
                                             </svg>
-                                            <svg v-else class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg v-else class="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                     d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                                                 </path>
                                             </svg>
-                                            <span class="text-sm text-gray-900 truncate max-w-xs" :title="item.fileName">{{ item.fileName }}</span>
+                                            <span class="text-sm text-slate-900 dark:text-slate-100 truncate max-w-xs" :title="item.fileName">{{ item.fileName }}</span>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{{ item.isFolder === 'Y' ? '—' : formatSize(item.size) }}</td>
-                                    <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{{ formatDate(item.updateTime) }}</td>
+                                    <td class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">{{ item.isFolder === 'Y' ? '—' : formatSize(item.size) }}</td>
+                                    <td class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">{{ formatDate(item.updateTime) }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">
                                         <button @click="restoreItem(item)" :disabled="busy"
-                                            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium mr-3 disabled:opacity-50">
+                                            class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium mr-3 disabled:opacity-50">
                                             Restore
                                         </button>
                                         <button @click="deleteItem(item)" :disabled="busy"
-                                            class="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50">
+                                            class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium disabled:opacity-50">
                                             Delete
                                         </button>
                                     </td>
@@ -89,28 +89,28 @@ export default {
                 </div>
 
                 <!-- Footer -->
-                <div class="p-4 border-t bg-gray-50 flex items-center justify-between gap-2">
+                <div class="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-b-xl flex items-center justify-between gap-2">
                     <div class="flex gap-2">
                         <button v-if="selectedIds.length > 0" @click="restoreSelected" :disabled="busy"
-                            class="px-3 py-2 bg-white border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                            class="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50">
                             Restore ({{ selectedIds.length }})
                         </button>
                         <button v-if="selectedIds.length > 0" @click="deleteSelected" :disabled="busy"
-                            class="px-3 py-2 bg-white border border-red-300 rounded shadow-sm text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+                            class="px-3 py-2 bg-white dark:bg-slate-700 border border-red-300 dark:border-red-800 rounded-lg shadow-sm text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50">
                             Delete ({{ selectedIds.length }})
                         </button>
                     </div>
                     <div class="flex gap-2">
                         <button @click="loadData" :disabled="busy"
-                            class="px-4 py-2 bg-white border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                            class="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50">
                             Refresh
                         </button>
                         <button v-if="items.length > 0" @click="emptyBin" :disabled="busy"
-                            class="px-4 py-2 bg-red-600 border border-transparent rounded shadow-sm text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white disabled:opacity-50">
                             Empty Bin
                         </button>
                         <button @click="$emit('close')"
-                            class="px-4 py-2 bg-indigo-600 border border-transparent rounded shadow-sm text-sm font-medium text-white hover:bg-indigo-700">
+                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition-colors">
                             Close
                         </button>
                     </div>

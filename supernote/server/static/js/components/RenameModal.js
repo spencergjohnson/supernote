@@ -3,13 +3,13 @@ export default {
     props: ['item'],
     template: `
         <div class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" @click.self="$emit('close')">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                <h3 class="text-lg font-bold text-slate-900 mb-4">Rename {{ item.isDirectory ? 'Folder' : 'File' }}</h3>
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">Rename {{ item.isDirectory ? 'Folder' : 'File' }}</h3>
                 <input v-model="newName" type="text" placeholder="New name"
-                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
+                    class="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
                     @keyup.enter="handleRename" ref="nameInput">
                 <div class="flex justify-end gap-3">
-                    <button @click="$emit('close')" class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
+                    <button @click="$emit('close')" class="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-medium">Cancel</button>
                     <button @click="handleRename" :disabled="!newName || newName === item.name"
                         class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all">
                         Rename

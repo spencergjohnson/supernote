@@ -111,7 +111,7 @@ export function renderMarkdown(text) {
         // Horizontal rule
         if (/^-{3,}$/.test(line.trim()) || /^\*{3,}$/.test(line.trim())) {
             closeList();
-            html.push('<hr class="my-2 border-slate-200"/>');
+            html.push('<hr class="my-2 border-slate-200 dark:border-slate-600"/>');
             continue;
         }
 
@@ -122,10 +122,10 @@ export function renderMarkdown(text) {
             const level = headingMatch[1].length;
             const content = inlineMarkdown(escapeHtml(headingMatch[2]));
             const cls = level === 1
-                ? 'text-base font-bold text-slate-800 mt-3 mb-1'
+                ? 'text-base font-bold text-slate-800 dark:text-slate-200 mt-3 mb-1'
                 : level === 2
-                    ? 'text-sm font-semibold text-slate-700 mt-2 mb-0.5'
-                    : 'text-sm font-medium text-slate-600 mt-1';
+                    ? 'text-sm font-semibold text-slate-700 dark:text-slate-300 mt-2 mb-0.5'
+                    : 'text-sm font-medium text-slate-600 dark:text-slate-400 mt-1';
             html.push(`<p class="${cls}">${content}</p>`);
             continue;
         }
@@ -134,7 +134,7 @@ export function renderMarkdown(text) {
         const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/);
         if (ulMatch) {
             if (!inUl) { closeList(); html.push('<ul class="list-disc list-inside space-y-0.5 my-1">'); inUl = true; }
-            html.push(`<li class="text-slate-600">${inlineMarkdown(escapeHtml(ulMatch[1]))}</li>`);
+            html.push(`<li class="text-slate-600 dark:text-slate-300">${inlineMarkdown(escapeHtml(ulMatch[1]))}</li>`);
             continue;
         }
 
@@ -142,13 +142,13 @@ export function renderMarkdown(text) {
         const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/);
         if (olMatch) {
             if (!inOl) { closeList(); html.push('<ol class="list-decimal list-inside space-y-0.5 my-1">'); inOl = true; }
-            html.push(`<li class="text-slate-600">${inlineMarkdown(escapeHtml(olMatch[1]))}</li>`);
+            html.push(`<li class="text-slate-600 dark:text-slate-300">${inlineMarkdown(escapeHtml(olMatch[1]))}</li>`);
             continue;
         }
 
         // Plain paragraph line
         closeList();
-        html.push(`<p class="text-slate-600 leading-relaxed">${inlineMarkdown(escapeHtml(line))}</p>`);
+        html.push(`<p class="text-slate-600 dark:text-slate-300 leading-relaxed">${inlineMarkdown(escapeHtml(line))}</p>`);
     }
 
     closeList();

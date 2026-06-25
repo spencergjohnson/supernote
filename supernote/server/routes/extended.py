@@ -533,6 +533,11 @@ def _classify_model(entry: dict) -> ModelInfoVO:
     if "image" in modalities:
         caps_list.append("vision")
 
+    # Fallback: infer embedding from model id when capabilities metadata is
+    # absent (e.g. older llama-swap versions or minimal configs).
+    if "embedding" not in caps_list and "embed" in model_id.lower():
+        caps_list.append("embedding")
+
     vision = "vision" in caps_list
     embedding = "embedding" in caps_list
     text = not embedding  # embedding models aren't chat/text models

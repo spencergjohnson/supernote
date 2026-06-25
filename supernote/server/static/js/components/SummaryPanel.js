@@ -31,7 +31,6 @@ export default {
 
             try {
                 const result = await fetchSummaries(props.fileId);
-                // Sort by creation time desc
                 summaries.value = result.sort((a, b) => (b.creationTime || 0) - (a.creationTime || 0));
             } catch (e) {
                 console.error(e);
@@ -44,7 +43,6 @@ export default {
         onMounted(loadSummaries);
         watch(() => props.fileId, loadSummaries);
 
-        // The overarching note overview is pinned to the top, the rest follow.
         const overviewItem = computed(() =>
             summaries.value.find((s) => (s.dataSource || '').toUpperCase() === 'OVERVIEW') || null
         );
@@ -59,7 +57,6 @@ export default {
             if (!item || !item.content) return '';
             const title = overviewTitle.value;
             let body = item.content;
-            // Avoid showing the title twice (content is stored as "title\n\nsummary").
             if (title && body.startsWith(title)) {
                 body = body.slice(title.length);
             }
@@ -93,14 +90,14 @@ export default {
         };
     },
     template: `
-    <div class="h-full flex flex-col bg-white border-l border-slate-200 shadow-xl w-full md:w-96 transition-all duration-300">
+    <div class="h-full flex flex-col bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-700 shadow-xl w-full md:w-96 transition-all duration-300">
         <!-- Header -->
-        <div class="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+        <div class="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-between">
+            <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                 AI Insights
             </h3>
-            <button @click="$emit('close')" class="text-slate-400 hover:text-slate-600">
+            <button @click="$emit('close')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
@@ -110,42 +107,42 @@ export default {
             <!-- Loading -->
             <div v-if="isLoading" class="flex flex-col items-center justify-center py-12">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-3"></div>
-                <p class="text-sm text-slate-500">Thinking...</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Thinking...</p>
             </div>
 
             <!-- Error -->
-            <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-lg text-sm">
+            <div v-if="error" class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg text-sm">
                 {{ error }}
             </div>
 
             <!-- Empty State -->
             <div v-if="!isLoading && !error && summaries.length === 0" class="text-center py-12">
-                <p class="text-slate-400 mb-2">No insights yet.</p>
-                <p class="text-xs text-slate-400">Summaries and transcripts will appear here once processed.</p>
+                <p class="text-slate-400 dark:text-slate-500 mb-2">No insights yet.</p>
+                <p class="text-xs text-slate-400 dark:text-slate-500">Summaries and transcripts will appear here once processed.</p>
             </div>
 
             <!-- Pinned Overview -->
-            <div v-if="overviewItem" class="rounded-xl p-4 border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white shadow-sm">
+            <div v-if="overviewItem" class="rounded-xl p-4 border border-indigo-100 dark:border-indigo-800 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/50 dark:to-slate-900 shadow-sm">
                 <div class="flex items-center gap-2 mb-2">
                     <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    <span class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Overview</span>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">Overview</span>
                 </div>
-                <h4 v-if="overviewTitle" class="font-semibold text-slate-800 mb-1">{{ overviewTitle }}</h4>
-                <div class="prose prose-sm prose-slate max-w-none text-slate-600" v-html="formatContent(overviewBody)"></div>
+                <h4 v-if="overviewTitle" class="font-semibold text-slate-800 dark:text-slate-100 mb-1">{{ overviewTitle }}</h4>
+                <div class="prose prose-sm prose-slate max-w-none text-slate-600 dark:text-slate-300" v-html="formatContent(overviewBody)"></div>
                 <div v-if="overviewTopics.length" class="flex flex-wrap gap-1.5 mt-3">
-                    <span v-for="t in overviewTopics" :key="t" class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{{ t }}</span>
+                    <span v-for="t in overviewTopics" :key="t" class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">{{ t }}</span>
                 </div>
             </div>
 
             <!-- List -->
-            <div v-for="item in otherItems" :key="item.id" class="bg-slate-50 rounded-lg p-4 border border-slate-100">
+            <div v-for="item in otherItems" :key="item.id" class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 border border-slate-100 dark:border-slate-700">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-semibold px-2 py-1 rounded bg-white text-slate-600 border border-slate-200">
+                    <span class="text-xs font-semibold px-2 py-1 rounded bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                         {{ sourceLabel(item.dataSource) }}
                     </span>
-                    <span class="text-xs text-slate-400">{{ formatDate(item.creationTime) }}</span>
+                    <span class="text-xs text-slate-400 dark:text-slate-500">{{ formatDate(item.creationTime) }}</span>
                 </div>
-                <div class="prose prose-sm prose-slate max-w-none text-slate-600" v-html="formatContent(item.content)"></div>
+                <div class="prose prose-sm prose-slate max-w-none text-slate-600 dark:text-slate-300" v-html="formatContent(item.content)"></div>
             </div>
         </div>
     </div>

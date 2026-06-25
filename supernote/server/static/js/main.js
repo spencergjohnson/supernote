@@ -30,6 +30,14 @@ createApp({
         SettingsPanel
     },
     setup() {
+        // Theme state — kept in sync with <html class="dark">
+        const isDark = ref(document.documentElement.classList.contains('dark'));
+        function toggleTheme() {
+            const dark = document.documentElement.classList.toggle('dark');
+            isDark.value = dark;
+            localStorage.setItem('theme', dark ? 'dark' : 'light');
+        }
+
         // Auth State
         const isLoggedIn = ref(false);
         const loginError = ref(null);
@@ -286,6 +294,8 @@ createApp({
         });
 
         return {
+            isDark,
+            toggleTheme,
             isLoggedIn,
             handleLogin,
             handleLogout,
