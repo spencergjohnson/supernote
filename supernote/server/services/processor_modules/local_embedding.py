@@ -88,7 +88,7 @@ class LocalEmbeddingModule(ProcessorModule):
         if not self.llm_service.is_configured:
             raise ValueError("Local LLM not configured")
 
-        model_id = self.config.gemini_embedding_model
+        model_id = self.config.embedding_model_name
         response = await self.llm_service.embed_content(
             model=model_id,
             contents=text_content,

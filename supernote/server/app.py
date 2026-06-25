@@ -35,10 +35,12 @@ from .routes import (
     system,
 )
 from .routes.decorators import public_route
+from .services.backfill import BackfillService
 from .services.blob import LocalBlobStorage
-from .services.temp_cleanup import TempCleanupService
+from .services.chat import ChatService
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
+from .services.folder_summary import FolderSummaryService
 from .services.gemini import GeminiService
 from .services.processor import ProcessorService
 from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
@@ -48,7 +50,9 @@ from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
+from .services.settings import SettingsService
 from .services.summary import SummaryService
+from .services.temp_cleanup import TempCleanupService
 from .services.user import UserService
 from .utils.hashing import get_md5_hash
 from .utils.rate_limit import RateLimiter
@@ -312,18 +316,33 @@ def create_app(config: ServerConfig) -> web.Application:
     search_service = SearchService(session_manager, gemini_service, config)
     app["search_service"] = search_service
 
+    chat_service = ChatService(session_manager, search_service, gemini_service, config)
+    app["chat_service"] = chat_service
+
+    settings_service = SettingsService(session_manager)
+    app["settings_service"] = settings_service
+
+    folder_summary_service = FolderSummaryService(
+        session_manager, gemini_service, summary_service, config
+    )
+    app["folder_summary_service"] = folder_summary_service
+
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
     app["rate_limiter"] = RateLimiter(coordination_service)
 
     processor_service = ProcessorService(
-        event_bus, session_manager, file_service, summary_service
+        event_bus,
+        session_manager,
+        file_service,
+        summary_service,
+        folder_summary_service=folder_summary_service,
     )
     app["processor_service"] = processor_service
 
     # Register modules
     if config.local_mode:
-        from .services.processor_modules.local_ocr import LocalOcrModule
         from .services.processor_modules.local_embedding import LocalEmbeddingModule
+        from .services.processor_modules.local_ocr import LocalOcrModule
         from .services.processor_modules.local_summary import LocalSummaryModule
 
         processor_service.register_modules(
@@ -403,6 +422,11 @@ def create_app(config: ServerConfig) -> web.Application:
         logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url)
 
+        # Apply any persisted model selections (DB wins over env/yaml).
+        settings_service: SettingsService = app["settings_service"]
+        if config.local_mode:
+            await settings_service.apply_to_config(config)
+
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
@@ -428,6 +452,18 @@ def create_app(config: ServerConfig) -> web.Application:
         logger.info("Starting background services...")
         await processor_service.start()
         await temp_cleanup_service.start()
+
+        # One-time, gap-filling backfill of note overviews + folder summaries
+        # from existing OCR text (never re-runs OCR). Runs in the background so
+        # it doesn't block startup.
+        if config.backfill_summaries_on_startup and processor_service.global_post_modules:
+            backfill_service = BackfillService(
+                session_manager,
+                processor_service.global_post_modules[0],
+                folder_summary_service,
+            )
+            asyncio.create_task(backfill_service.run())
+
         logger.info("Startup sequence complete.")
 
         app["mcp_task"] = mcp_task

@@ -1,5 +1,14 @@
-import { ref, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { fetchSummaries } from '../api/client.js';
+
+const parseMeta = (raw) => {
+    if (!raw) return {};
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        return {};
+    }
+};
 
 export default {
     props: {
@@ -34,10 +43,37 @@ export default {
         onMounted(loadSummaries);
         watch(() => props.fileId, loadSummaries);
 
+        // The overarching note overview is pinned to the top, the rest follow.
+        const overviewItem = computed(() =>
+            summaries.value.find((s) => (s.dataSource || '').toUpperCase() === 'OVERVIEW') || null
+        );
+        const otherItems = computed(() =>
+            summaries.value.filter((s) => (s.dataSource || '').toUpperCase() !== 'OVERVIEW')
+        );
+
+        const overviewTitle = computed(() => parseMeta(overviewItem.value?.metadata).title || '');
+        const overviewTopics = computed(() => parseMeta(overviewItem.value?.metadata).topics || []);
+        const overviewBody = computed(() => {
+            const item = overviewItem.value;
+            if (!item || !item.content) return '';
+            const title = overviewTitle.value;
+            let body = item.content;
+            // Avoid showing the title twice (content is stored as "title\n\nsummary").
+            if (title && body.startsWith(title)) {
+                body = body.slice(title.length);
+            }
+            return body.trim();
+        });
+
         // Helper to format text (simple line breaks)
         const formatContent = (text) => {
             if (!text) return "";
             return text.replace(/\n/g, '<br/>');
+        };
+
+        const sourceLabel = (src) => {
+            const map = { OCR: 'Transcript', GEMINI: 'Timeline', OVERVIEW: 'Overview', USER: 'Note' };
+            return map[(src || '').toUpperCase()] || src || 'Unknown';
         };
 
         const formatDate = (ts) => {
@@ -49,7 +85,13 @@ export default {
             summaries,
             isLoading,
             error,
+            overviewItem,
+            otherItems,
+            overviewTitle,
+            overviewTopics,
+            overviewBody,
             formatContent,
+            sourceLabel,
             formatDate
         };
     },
@@ -85,11 +127,24 @@ export default {
                 <p class="text-xs text-slate-400">Summaries and transcripts will appear here once processed.</p>
             </div>
 
+            <!-- Pinned Overview -->
+            <div v-if="overviewItem" class="rounded-xl p-4 border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white shadow-sm">
+                <div class="flex items-center gap-2 mb-2">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Overview</span>
+                </div>
+                <h4 v-if="overviewTitle" class="font-semibold text-slate-800 mb-1">{{ overviewTitle }}</h4>
+                <div class="prose prose-sm prose-slate max-w-none text-slate-600" v-html="formatContent(overviewBody)"></div>
+                <div v-if="overviewTopics.length" class="flex flex-wrap gap-1.5 mt-3">
+                    <span v-for="t in overviewTopics" :key="t" class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{{ t }}</span>
+                </div>
+            </div>
+
             <!-- List -->
-            <div v-for="item in summaries" :key="item.id" class="bg-slate-50 rounded-lg p-4 border border-slate-100">
+            <div v-for="item in otherItems" :key="item.id" class="bg-slate-50 rounded-lg p-4 border border-slate-100">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-semibold px-2 py-1 rounded bg-white text-slate-600 border border-slate-200 capitalize">
-                        {{ item.dataSource || 'Unknown' }}
+                    <span class="text-xs font-semibold px-2 py-1 rounded bg-white text-slate-600 border border-slate-200">
+                        {{ sourceLabel(item.dataSource) }}
                     </span>
                     <span class="text-xs text-slate-400">{{ formatDate(item.creationTime) }}</span>
                 </div>

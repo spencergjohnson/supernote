@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import List, Set
+from typing import TYPE_CHECKING, List, Set
 
 from sqlalchemy import delete, select
 
@@ -16,6 +16,9 @@ from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
 from ..utils.paths import get_page_png_path
+
+if TYPE_CHECKING:
+    from ..services.folder_summary import FolderSummaryService
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +40,24 @@ class ProcessorService:
         file_service: FileService,
         summary_service: SummaryService,
         concurrency: int = 2,
+        folder_summary_service: "FolderSummaryService | None" = None,
+        folder_debounce_seconds: float = 15.0,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager
         self.file_service = file_service
         self.summary_service = summary_service
         self.concurrency = concurrency
+        self.folder_summary_service = folder_summary_service
+        self.folder_debounce_seconds = folder_debounce_seconds
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: Set[int] = set()
+        # Folders whose summaries need rebuilding (debounced to batch note bursts).
+        self.dirty_folders: Set[int] = set()
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
+        self.folder_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
         # Module registry
@@ -90,6 +100,10 @@ class ProcessorService:
         # Start Polling Loop
         self.polling_task = asyncio.create_task(self.poll_loop())
 
+        # Start Folder Summary Loop (debounced rollups)
+        if self.folder_summary_service is not None:
+            self.folder_task = asyncio.create_task(self.folder_summary_loop())
+
     async def stop(self) -> None:
         """Stop the processor service."""
         logger.info("Stopping ProcessorService...")
@@ -100,6 +114,14 @@ class ProcessorService:
             self.polling_task.cancel()
             try:
                 await self.polling_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop Folder Summary Loop
+        if self.folder_task:
+            self.folder_task.cancel()
+            try:
+                await self.folder_task
             except asyncio.CancelledError:
                 pass
 
@@ -124,6 +146,9 @@ class ProcessorService:
             return
         file_id = event.file_id
         logger.info(f"Received delete for note: {file_id}")
+
+        # Rebuild the containing folder's summary now that this note is gone.
+        await self._mark_folder_dirty(file_id)
 
         async with self.session_manager.session() as session:
             # Get all pages to know which PNGs to delete
@@ -302,6 +327,45 @@ class ProcessorService:
         # Pipeline Stage: Global Post-processing (Summary)
         for module in self.global_post_modules:
             await module.run(file_id, self.session_manager)
+
+        # Mark the containing folder dirty so its summary gets rebuilt (debounced).
+        await self._mark_folder_dirty(file_id)
+
+    async def _mark_folder_dirty(self, file_id: int) -> None:
+        """Flag the folder containing ``file_id`` for summary regeneration."""
+        if self.folder_summary_service is None:
+            return
+        try:
+            async with self.session_manager.session() as session:
+                file_do = await session.get(UserFileDO, file_id)
+                directory_id = file_do.directory_id if file_do else None
+        except Exception as e:
+            logger.warning(f"Could not resolve folder for file {file_id}: {e}")
+            return
+        if directory_id and directory_id != 0:
+            self.dirty_folders.add(directory_id)
+
+    async def folder_summary_loop(self) -> None:
+        """Debounced background loop that rebuilds dirty folder summaries."""
+        logger.info("Starting folder summary loop...")
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(self.folder_debounce_seconds)
+                if not self.dirty_folders:
+                    continue
+                service = self.folder_summary_service
+                if service is None or not service.is_configured:
+                    self.dirty_folders.clear()
+                    continue
+                # Drain the current batch; new dirty folders accumulate for next pass.
+                leaves = list(self.dirty_folders)
+                self.dirty_folders.clear()
+                for leaf in leaves:
+                    await service.regenerate_ancestors(leaf)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in folder summary loop: {e}", exc_info=True)
 
     async def _process_page(self, file_id: int, page_index: int, page_id: str) -> None:
         """Process all modules for a single page sequentially."""

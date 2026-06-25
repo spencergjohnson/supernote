@@ -22,6 +22,16 @@ def get_transcript_id(file_basis: str) -> str:
     return f"{file_basis}-transcript"
 
 
+def get_overview_id(file_basis: str) -> str:
+    """Generate a unique identifier for an overarching note overview."""
+    return f"{file_basis}-overview"
+
+
+def get_folder_summary_id(folder_id: int) -> str:
+    """Generate a unique identifier for a folder-level summary."""
+    return f"folder-{folder_id}-summary"
+
+
 def get_conversion_png_path(
     user_id: int, file_id: int, page_index: int, file_md5: str
 ) -> str:

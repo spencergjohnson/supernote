@@ -150,7 +150,7 @@ BaseConfig
     """
 
     local_llm_model: str = "qwen2.5-vl-7b"
-    """Model name to pass in local chat completions requests.
+    """Model name to pass in local chat completions requests (vision/OCR role).
 
     Env Var: `SUPERNOTE_LOCAL_LLM_MODEL`
     """
@@ -160,6 +160,56 @@ BaseConfig
 
     Env Var: `SUPERNOTE_LOCAL_EMBEDDING_MODEL`
     """
+
+    local_summary_model: str = ""
+    """Optional text-only model for note/folder summaries (no vision required).
+    Falls back to ``local_llm_model`` when empty.
+
+    Env Var: `SUPERNOTE_LOCAL_SUMMARY_MODEL`
+    """
+
+    local_chat_model: str = ""
+    """Optional text-only model for RAG chat responses (no vision required).
+    Falls back to ``local_summary_model`` then ``local_llm_model`` when empty.
+
+    Env Var: `SUPERNOTE_LOCAL_CHAT_MODEL`
+    """
+
+    # -------------------------------------------------------------------------
+    # Role-based model resolution helpers (mode-aware, used by all call sites)
+    # -------------------------------------------------------------------------
+
+    @property
+    def vision_model(self) -> str:
+        """Model for vision/OCR tasks (must be vision-capable)."""
+        if self.local_mode:
+            return self.local_llm_model
+        return self.gemini_ocr_model
+
+    @property
+    def summary_model(self) -> str:
+        """Model for note/folder summary generation (text only)."""
+        if self.local_mode:
+            return self.local_summary_model or self.local_llm_model
+        return self.gemini_ocr_model
+
+    @property
+    def chat_model(self) -> str:
+        """Model for RAG chat responses (text only)."""
+        if self.local_mode:
+            return (
+                self.local_chat_model
+                or self.local_summary_model
+                or self.local_llm_model
+            )
+        return self.gemini_ocr_model
+
+    @property
+    def embedding_model_name(self) -> str:
+        """Model for embedding generation and search query embedding."""
+        if self.local_mode:
+            return self.local_embedding_model
+        return self.gemini_embedding_model
 
     temp_ttl_seconds: int = 3600
     """Age threshold (seconds) for removing orphaned temp upload files.
@@ -173,6 +223,14 @@ BaseConfig
     """How often (seconds) the temp file sweeper runs.
 
     Env Var: `SUPERNOTE_TEMP_CLEANUP_INTERVAL_SECONDS`
+    """
+
+    backfill_summaries_on_startup: bool = True
+    """Run a one-time, gap-filling backfill of note overviews and folder
+    summaries at startup. Regenerates from existing OCR text only (never
+    re-runs OCR). Idempotent: skips notes/folders that already have summaries.
+
+    Env Var: `SUPERNOTE_BACKFILL_SUMMARIES`
     """
 
     # NOTE (disk-exhaustion risk — deferred): The recycle bin is intentionally
@@ -359,6 +417,22 @@ BaseConfig
         if local_embedding_model := os.getenv("SUPERNOTE_LOCAL_EMBEDDING_MODEL"):
             config.local_embedding_model = local_embedding_model
             logger.info(f"Using SUPERNOTE_LOCAL_EMBEDDING_MODEL: {config.local_embedding_model}")
+
+        if local_summary_model := os.getenv("SUPERNOTE_LOCAL_SUMMARY_MODEL"):
+            config.local_summary_model = local_summary_model
+            logger.info(f"Using SUPERNOTE_LOCAL_SUMMARY_MODEL: {config.local_summary_model}")
+
+        if local_chat_model := os.getenv("SUPERNOTE_LOCAL_CHAT_MODEL"):
+            config.local_chat_model = local_chat_model
+            logger.info(f"Using SUPERNOTE_LOCAL_CHAT_MODEL: {config.local_chat_model}")
+
+        if os.getenv("SUPERNOTE_BACKFILL_SUMMARIES"):
+            config.backfill_summaries_on_startup = _get_bool_env(
+                "SUPERNOTE_BACKFILL_SUMMARIES", config.backfill_summaries_on_startup
+            )
+            logger.info(
+                f"Backfill summaries on startup: {config.backfill_summaries_on_startup}"
+            )
 
         if temp_ttl := os.getenv("SUPERNOTE_TEMP_TTL_SECONDS"):
             try:

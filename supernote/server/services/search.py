@@ -49,6 +49,7 @@ class SearchService:
         name_filter: Optional[str] = None,
         date_after: Optional[str] = None,
         date_before: Optional[str] = None,
+        file_ids: Optional[List[int]] = None,
     ) -> List[SearchResult]:
         """
         Search for notebook chunks similar to the query.
@@ -78,7 +79,7 @@ class SearchService:
             return []
 
         # 1. Embed Query
-        model_id = self.config.gemini_embedding_model
+        model_id = self.config.embedding_model_name
         try:
             response = await self.gemini_service.embed_content(
                 model=model_id,
@@ -110,6 +111,9 @@ class SearchService:
 
             if name_filter:
                 stmt = stmt.where(UserFileDO.file_name.ilike(f"%{name_filter}%"))
+
+            if file_ids is not None:
+                stmt = stmt.where(NotePageContentDO.file_id.in_(file_ids))
 
             result = await session.execute(stmt)
             candidates = result.all()

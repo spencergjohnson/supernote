@@ -13,11 +13,15 @@ RESOURCES_DIR = importlib.resources.files("supernote.server") / "resources" / "p
 class PromptId(str, enum.Enum):
     OCR_TRANSCRIPTION = "ocr_transcription"
     SUMMARY_GENERATION = "summary_generation"
+    FOLDER_SUMMARY = "folder_summary"
+    CHAT = "chat"
 
 
 CATEGORY_MAP = {
     "ocr": PromptId.OCR_TRANSCRIPTION.value,
     "summary": PromptId.SUMMARY_GENERATION.value,
+    "folder_summary": PromptId.FOLDER_SUMMARY.value,
+    "chat": PromptId.CHAT.value,
 }
 COMMON = "common"
 DEFAULT = "default"

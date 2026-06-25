@@ -5,8 +5,9 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 ## Core Features
 
 -   **Seamless Sync**: Implements the native Supernote sync protocol.
--   **AI Synthesis**: Automatically transcribes handwriting and identifies key insights using Google Gemini.
--   **Knowledge Exploration**: Cross-notebook semantic search and web-based file browsing.
+-   **AI Synthesis**: Automatically transcribes handwriting, generates per-note overviews, and rolls them up into folder-level summaries (Google Gemini or a local LLM).
+-   **Knowledge Exploration**: Cross-notebook semantic search, web-based file browsing, and grounded RAG chat over your notes.
+-   **Runtime Model Selection**: In local mode, admins can pick the model for each role (vision/OCR, summary, chat, embedding) from the Web UI; selections persist across restarts.
 -   **Private & Local**: Store your notes and metadata on your own infrastructure.
 
 ## Getting Started
@@ -91,9 +92,9 @@ shared user-defined network (`supernote-net`) and address it by container name
 (`http://llamaswap:8080`). This avoids `host.docker.internal`, which is unreliable on
 Linux because the host firewall often drops container->host traffic. Attaching the
 inference container to the network is additive (it keeps its published port and other
-networks), but it must rejoin `supernote-net` if recreated. The chat model must be
-**vision-capable** for OCR. A fixed `SUPERNOTE_JWT_SECRET` keeps your device logged in
-across restarts.
+networks), but it must rejoin `supernote-net` if recreated. The OCR/vision model
+(`SUPERNOTE_LOCAL_LLM_MODEL`) must be **vision-capable**. A fixed `SUPERNOTE_JWT_SECRET`
+keeps your device logged in across restarts.
 
 Keep `SUPERNOTE_BASE_URL` on `localhost` rather than your LAN IP. It is the MCP OAuth
 issuer URL, and the MCP SDK rejects a non-HTTPS issuer unless the host is

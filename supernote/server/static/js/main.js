@@ -1,6 +1,6 @@
 import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
-import { setToken, getToken, login, logout, fetchProcessingStatus, fetchProgress } from './api/client.js';
+import { setToken, getToken, login, logout, fetchProcessingStatus, fetchProgress, fetchSystemInfo } from './api/client.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
@@ -10,6 +10,9 @@ import DashboardPanel from './components/DashboardPanel.js';
 import RecyclePanel from './components/RecyclePanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
+import FolderOverviewCard from './components/FolderOverviewCard.js';
+import ChatPanel from './components/ChatPanel.js';
+import SettingsPanel from './components/SettingsPanel.js';
 
 createApp({
     components: {
@@ -21,7 +24,10 @@ createApp({
         DashboardPanel,
         RecyclePanel,
         MoveModal,
-        RenameModal
+        RenameModal,
+        FolderOverviewCard,
+        ChatPanel,
+        SettingsPanel
     },
     setup() {
         // Auth State
@@ -31,6 +37,11 @@ createApp({
         const showSearchPanel = ref(false);
         const showDashboardPanel = ref(false);
         const showRecyclePanel = ref(false);
+        const showChatPanel = ref(false);
+        const showSettingsPanel = ref(false);
+
+        // System info (localMode + isAdmin) fetched after login
+        const systemInfo = ref({ localMode: false, isAdmin: false });
         const progress = ref(null); // aggregate indexing progress
 
         // UI State
@@ -79,6 +90,7 @@ createApp({
         function openFileFromPanel(file) {
             showSearchPanel.value = false;
             showDashboardPanel.value = false;
+            showChatPanel.value = false;
             selectedFile.value = file;
             view.value = 'viewer';
         }
@@ -211,6 +223,10 @@ createApp({
             // Normal app session
             isLoggedIn.value = true;
             await loadDirectory();
+            // Fetch system info for admin UI gating (best-effort)
+            try {
+                systemInfo.value = await fetchSystemInfo();
+            } catch (_) {}
             return true;
         }
 
@@ -288,6 +304,9 @@ createApp({
             showSearchPanel,
             showDashboardPanel,
             showRecyclePanel,
+            showChatPanel,
+            showSettingsPanel,
+            systemInfo,
             progress,
             indexingBusy,
             progressPercent,

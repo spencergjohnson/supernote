@@ -15,11 +15,12 @@ This toolkit is a self-hosted implementation of the **Supernote Private Cloud** 
 
 This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, while adding specialized features for knowledge workers and researchers:
 
-- **📜 AI Synthesis**: Automatically transcribes handwriting and generates high-level summaries (Daily, Weekly, Monthly).
-- **🔍 Semantic Search**: Find concepts across all your notebooks—not just filenames—using vectorized content.
-- **🛡️ Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server, just like Supernote Private Cloud.
-- **🖥️ Modern Web UI**: A sleek, reactive frontend to browse, review, and search your notes from any browser.
-- **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Supports dynamic **IndieAuth** for secure, remote access.
+- **AI Synthesis**: Automatically transcribes handwriting and generates high-level summaries (Daily, Weekly, Monthly), per-note overviews, and rolled-up folder summaries.
+- **Semantic Search**: Find concepts across all your notebooks—not just filenames—using vectorized content.
+- **Chat With Your Notes**: Ask questions in the Web UI and get answers grounded in your notebooks (RAG), with citations back to the source pages. Scope a conversation to your whole library, a folder, or a single note.
+- **Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server, just like Supernote Private Cloud.
+- **Modern Web UI**: A sleek, reactive frontend to browse, review, and search your notes from any browser.
+- **Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Supports dynamic **IndieAuth** for secure, remote access.
 
 ## Synthesis & AI in Action
 
@@ -105,14 +106,19 @@ Any inference server that exposes the standard OpenAI endpoints (`POST /v1/chat/
 
 ### Configuration
 
-Local mode is controlled by four settings. Each can be set as an environment variable or in `config.yaml`; environment variables take precedence.
+Local mode is controlled by the settings below. Each can be set as an environment variable or in `config.yaml`; environment variables take precedence.
 
 | Environment Variable | Config Key | Description |
 |----------------------|------------|-------------|
 | `SUPERNOTE_LOCAL_MODE` | `local_mode` | Set to `true` to enable local mode and disable Gemini. |
 | `SUPERNOTE_LOCAL_LLM_URL` | `local_llm_url` | Base URL of your OpenAI-compatible server (e.g. `http://llamaswap:8080` when using the in-repo Docker setup, or `http://localhost:11434` for Ollama). |
-| `SUPERNOTE_LOCAL_LLM_MODEL` | `local_llm_model` | Model name for chat completions. **Must be vision-capable** for OCR. |
-| `SUPERNOTE_LOCAL_EMBEDDING_MODEL` | `local_embedding_model` | Model name for semantic search embeddings. |
+| `SUPERNOTE_LOCAL_LLM_MODEL` | `local_llm_model` | Model for the **vision/OCR** role. **Must be vision-capable.** |
+| `SUPERNOTE_LOCAL_EMBEDDING_MODEL` | `local_embedding_model` | Model for semantic search embeddings. |
+| `SUPERNOTE_LOCAL_SUMMARY_MODEL` | `local_summary_model` | *Optional.* Text-only model for note/folder summaries. Falls back to `local_llm_model` when unset, so a faster non-vision model can be used here. |
+| `SUPERNOTE_LOCAL_CHAT_MODEL` | `local_chat_model` | *Optional.* Text-only model for RAG chat responses. Falls back to `local_summary_model`, then `local_llm_model`. |
+
+> [!TIP]
+> Only the **vision/OCR** model must be vision-capable. Summaries and chat are text-only tasks, so you can point `SUPERNOTE_LOCAL_SUMMARY_MODEL` / `SUPERNOTE_LOCAL_CHAT_MODEL` at a faster or stronger non-vision model (add its alias to [`llama-swap/llama-swap.yaml`](llama-swap/llama-swap.yaml) first). Admins can also switch the model for each role at runtime from the Web UI settings panel — selections are persisted and survive restarts.
 
 ### Quick Start
 
@@ -183,6 +189,8 @@ no Gemini, no API key):
 ```bash
 # Defaults to an Ollama server on the host (:11434).
 # Override the inference server with LLM_URL / LLM_MODEL / EMBEDDING_MODEL.
+# Optionally set SUMMARY_MODEL / CHAT_MODEL to use a faster text-only model
+# for summaries and chat (falls back to LLM_MODEL when unset).
 ./run-local.sh
 ```
 
@@ -220,8 +228,8 @@ docker run -d \
 > [!NOTE]
 > The image's storage/config volume is `/data` (not `/storage`), and the default
 > command already starts the server, so do **not** append `serve`. Setting a fixed
-> `SUPERNOTE_JWT_SECRET` keeps your device logged in across restarts. The chat model
-> must be **vision-capable** for OCR.
+> `SUPERNOTE_JWT_SECRET` keeps your device logged in across restarts. The OCR/vision
+> model (`SUPERNOTE_LOCAL_LLM_MODEL`) must be **vision-capable**.
 >
 > Keep `SUPERNOTE_BASE_URL` on `localhost` (not your LAN IP): it's the MCP OAuth
 > issuer, and the MCP SDK rejects a non-HTTPS issuer unless the host is `localhost`.
@@ -347,7 +355,7 @@ The official Supernote Private Cloud by Ratta is a rock-solid, production-grade 
 
 | Capability | Official Private Cloud (Ratta) | Supernote Hub (This Project) |
 |------------|-------------------------------|-----------------------------|
-| **Core Sync** | ✅ Robust & Validated | ✅ Protocol Compatible |
+| **Core Sync** | Robust & Validated | Protocol Compatible |
 | **AI Analysis** | Basic OCR (Device-side) | **Adv. OCR & Multi-stage Synthesis** |
 | **Search** | Path/Filename | **Semantic Concept Search** |
 | **Stack** | Java / Spring Boot | Python / Asyncio |

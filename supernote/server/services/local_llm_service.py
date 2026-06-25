@@ -152,7 +152,7 @@ class LocalLLMService:
             raise ValueError("Local LLM not configured")
 
         payload: dict[str, Any] = {
-            "model": self.chat_model,
+            "model": model or self.chat_model,
             "messages": self._build_messages(contents),
         }
 
@@ -185,7 +185,7 @@ class LocalLLMService:
             raise ValueError("Local LLM not configured")
 
         payload: dict[str, Any] = {
-            "model": self.embedding_model,
+            "model": model or self.embedding_model,
             "input": contents,
         }
 

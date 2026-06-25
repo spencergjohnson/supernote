@@ -343,3 +343,133 @@ class DashboardStatsVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+# ---------------------------------------------------------------------------
+# Chat (RAG)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChatSourceVO(DataClassJSONMixin):
+    """A cited source page in a chat answer."""
+
+    file_id: str = field(metadata=field_options(alias="fileId"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    text_preview: str = field(
+        metadata=field_options(alias="textPreview"), default=""
+    )
+    date: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ChatMessageDTO(DataClassJSONMixin):
+    """A single message in the conversation history."""
+
+    role: str
+    """'user' or 'assistant'."""
+
+    content: str
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ChatRequestDTO(DataClassJSONMixin):
+    """Request DTO for RAG chat."""
+
+    query: str
+    """The current user question."""
+
+    messages: list[ChatMessageDTO] = field(default_factory=list)
+    """Prior conversation turns for multi-turn context."""
+
+    scope: str = "library"
+    """Scope: 'library' | 'folder:<id>' | 'note:<id>'."""
+
+    top_k: int = field(metadata=field_options(alias="topK"), default=8)
+    """Number of page chunks to retrieve."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ChatResponseVO(DataClassJSONMixin):
+    """Response VO for RAG chat."""
+
+    answer: str
+    sources: list[ChatSourceVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+# ---------------------------------------------------------------------------
+# System info / model selector
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SystemInfoVO(DataClassJSONMixin):
+    """Basic server mode info for the frontend to gate admin UI."""
+
+    local_mode: bool = field(metadata=field_options(alias="localMode"))
+    is_admin: bool = field(metadata=field_options(alias="isAdmin"))
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ModelInfoVO(DataClassJSONMixin):
+    """A single model available from llama-swap."""
+
+    id: str
+    vision: bool = False
+    embedding: bool = False
+    text: bool = True
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class SystemConfigVO(DataClassJSONMixin):
+    """Current active model selections for each role.
+
+    ``vision``, ``summary``, ``chat``, ``embedding`` are the *raw* stored
+    override values — empty string means "inherit from the fallback chain".
+    ``summary_effective`` / ``chat_effective`` are the resolved models actually
+    in use, for display purposes.
+    """
+
+    vision: str
+    summary: str
+    chat: str
+    embedding: str
+    summary_effective: str = field(metadata=field_options(alias="summaryEffective"))
+    chat_effective: str = field(metadata=field_options(alias="chatEffective"))
+    local_mode: bool = field(metadata=field_options(alias="localMode"))
+    llm_url: str = field(metadata=field_options(alias="llmUrl"), default="")
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class SetSystemConfigDTO(DataClassJSONMixin):
+    """Partial update of model role selections."""
+
+    vision: str | None = None
+    summary: str | None = None
+    chat: str | None = None
+    embedding: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True

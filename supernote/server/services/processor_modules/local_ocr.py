@@ -114,7 +114,7 @@ class LocalOcrModule(ProcessorModule):
         )
         prompt = f"{metadata_block}\n\n{prompt}"
 
-        model_id = self.config.gemini_ocr_model
+        model_id = self.config.vision_model
         response = await self.llm_service.generate_content(
             model=model_id,
             contents=[prompt, png_data],

@@ -7,16 +7,24 @@ to our new server.
 import logging
 from collections import Counter
 
+import aiohttp
 from aiohttp import web
 from sqlalchemy import func, select
 
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
     ActivityBucketVO,
+    ChatRequestDTO,
+    ChatResponseVO,
+    ChatSourceVO,
     DashboardStatsVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    ModelInfoVO,
     SearchResultVO,
+    SetSystemConfigDTO,
+    SystemConfigVO,
+    SystemInfoVO,
     SystemProgressVO,
     SystemTaskListVO,
     SystemTaskVO,
@@ -34,7 +42,9 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.chat import ChatMessage, ChatService
 from supernote.server.services.search import SearchService
+from supernote.server.services.settings import SettingsService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.note_content import infer_page_date
@@ -430,5 +440,210 @@ async def handle_dashboard(request: web.Request) -> web.Response:
             activity_by_month=activity_by_month,
             top_notebooks=top_notebooks,
             top_tags=top_tags,
+        ).to_dict()
+    )
+
+
+@routes.post("/api/extended/chat")
+async def handle_chat(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/chat
+    # Purpose: RAG-based conversational Q&A over the user's notebooks.
+    user_email = request["user"]
+
+    try:
+        data = await request.json()
+        req_dto = ChatRequestDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    chat_service: ChatService = request.app["chat_service"]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    messages = [ChatMessage(role=m.role, content=m.content) for m in req_dto.messages]
+
+    try:
+        result = await chat_service.answer(
+            user_id=user_id,
+            query=req_dto.query,
+            messages=messages,
+            scope=req_dto.scope,
+            top_k=req_dto.top_k,
+        )
+    except Exception as err:
+        logger.exception("Error in chat handler")
+        return SupernoteError.uncaught(err).to_response()
+
+    sources = [
+        ChatSourceVO(
+            file_id=str(s.file_id),
+            file_name=s.file_name,
+            page_index=s.page_index,
+            text_preview=s.text_preview,
+            date=s.date,
+        )
+        for s in result.sources
+    ]
+    return web.json_response(
+        ChatResponseVO(answer=result.answer, sources=sources).to_dict()
+    )
+
+
+@routes.get("/api/extended/system/info")
+async def handle_system_info(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/system/info
+    # Purpose: Return localMode + isAdmin so the frontend can gate admin UI.
+    user_email = request["user"]
+    user_service: UserService = request.app["user_service"]
+    config = request.app["config"]
+
+    user = await user_service.get_user_by_email(user_email)
+    is_admin = bool(user and getattr(user, "is_admin", False))
+    local_mode = bool(config.local_mode)
+
+    return web.json_response(
+        SystemInfoVO(local_mode=local_mode, is_admin=is_admin).to_dict()
+    )
+
+
+async def _check_admin(request: web.Request) -> bool:
+    user_email = request.get("user", "")
+    user_service: UserService = request.app["user_service"]
+    user = await user_service.get_user_by_email(user_email)
+    return bool(user and getattr(user, "is_admin", False))
+
+
+def _classify_model(entry: dict) -> ModelInfoVO:
+    """Normalize a llama-swap /v1/models entry into ModelInfoVO."""
+    model_id = entry.get("id", "")
+    caps_list: list[str] = []
+
+    # llama-swap v225+ shape
+    meta = entry.get("metadata") or {}
+    caps = meta.get("capabilities") or []
+    if isinstance(caps, list):
+        caps_list = [str(c).lower() for c in caps]
+
+    # Older / pass-through shape (architecture.input_modalities)
+    arch = entry.get("architecture") or {}
+    modalities = arch.get("input_modalities") or []
+    if "image" in modalities:
+        caps_list.append("vision")
+
+    vision = "vision" in caps_list
+    embedding = "embedding" in caps_list
+    text = not embedding  # embedding models aren't chat/text models
+
+    return ModelInfoVO(id=model_id, vision=vision, embedding=embedding, text=text)
+
+
+@routes.get("/api/extended/system/models")
+async def handle_system_models(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/system/models  (admin only)
+    # Purpose: Proxy llama-swap /v1/models and normalize for the UI.
+    if not await _check_admin(request):
+        return web.json_response({"error": "Forbidden"}, status=403)
+
+    config = request.app["config"]
+    if not config.local_mode:
+        return web.json_response({"error": "Not in local mode"}, status=400)
+
+    url = config.local_llm_url.rstrip("/") + "/v1/models"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if not resp.ok:
+                    return web.json_response(
+                        {"error": f"llama-swap returned {resp.status}"}, status=502
+                    )
+                data = await resp.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch llama-swap models: {e}")
+        return web.json_response({"error": f"Could not reach llama-swap: {e}"}, status=502)
+
+    raw_models = data.get("data") or []
+    models = [_classify_model(m) for m in raw_models]
+    # Sort: vision first, then text, then embedding
+    models.sort(key=lambda m: (not m.vision, m.embedding))
+
+    return web.json_response({"models": [m.to_dict() for m in models]})
+
+
+@routes.get("/api/extended/system/config")
+async def handle_system_config_get(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/system/config  (admin only)
+    # Purpose: Return current model selection for each role.
+    # ``vision``/``summary``/``chat``/``embedding`` are the *raw* stored
+    # overrides (empty = inherit).  ``summaryEffective``/``chatEffective``
+    # are the fully-resolved values in use right now.
+    if not await _check_admin(request):
+        return web.json_response({"error": "Forbidden"}, status=403)
+
+    config = request.app["config"]
+    return web.json_response(
+        SystemConfigVO(
+            vision=config.local_llm_model,
+            summary=config.local_summary_model,
+            chat=config.local_chat_model,
+            embedding=config.local_embedding_model,
+            summary_effective=config.summary_model,
+            chat_effective=config.chat_model,
+            local_mode=config.local_mode,
+            llm_url=config.local_llm_url if config.local_mode else "",
+        ).to_dict()
+    )
+
+
+@routes.post("/api/extended/system/config")
+async def handle_system_config_set(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/system/config  (admin only)
+    # Purpose: Persist model role selections and apply to running config.
+    if not await _check_admin(request):
+        return web.json_response({"error": "Forbidden"}, status=403)
+
+    config = request.app["config"]
+    if not config.local_mode:
+        return web.json_response({"error": "Model selection only available in local mode"}, status=400)
+
+    try:
+        data = await request.json()
+        dto = SetSystemConfigDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid request: {e}"}, status=400)
+
+    settings_service: SettingsService = request.app["settings_service"]
+
+    # vision / embedding: only update when explicitly provided (non-None).
+    if dto.vision is not None:
+        await settings_service.set_role_model("vision", dto.vision)
+        config.local_llm_model = dto.vision
+
+    # summary / chat: empty string is a valid value meaning "inherit from
+    # fallback chain"; only skip when the field is absent (None).
+    if dto.summary is not None:
+        await settings_service.set_role_model("summary", dto.summary)
+        config.local_summary_model = dto.summary
+
+    if dto.chat is not None:
+        await settings_service.set_role_model("chat", dto.chat)
+        config.local_chat_model = dto.chat
+
+    if dto.embedding is not None:
+        await settings_service.set_role_model("embedding", dto.embedding)
+        config.local_embedding_model = dto.embedding
+
+    return web.json_response(
+        SystemConfigVO(
+            vision=config.local_llm_model,
+            summary=config.local_summary_model,
+            chat=config.local_chat_model,
+            embedding=config.local_embedding_model,
+            summary_effective=config.summary_model,
+            chat_effective=config.chat_model,
+            local_mode=config.local_mode,
+            llm_url=config.local_llm_url,
         ).to_dict()
     )

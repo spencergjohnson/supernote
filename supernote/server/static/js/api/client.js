@@ -743,3 +743,90 @@ export async function fetchDashboard() {
 
     return await response.json();
 }
+
+/**
+ * Send a chat message and receive an AI answer with citations.
+ * @param {string} query - The user's question.
+ * @param {Array<{role:string, content:string}>} messages - Prior conversation turns.
+ * @param {string} scope - 'library' | 'folder:<id>' | 'note:<id>'
+ * @param {number} topK - Number of context chunks to retrieve.
+ */
+export async function chat(query, messages = [], scope = 'library', topK = 8) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify({ query, messages, scope, topK })
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Chat request failed: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Fetch system info (localMode, isAdmin).
+ */
+export async function fetchSystemInfo() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/info', {
+        method: 'GET',
+        headers: { 'x-access-token': currentToken }
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to fetch system info: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Fetch available models from llama-swap (admin, local mode only).
+ */
+export async function fetchModels() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/models', {
+        method: 'GET',
+        headers: { 'x-access-token': currentToken }
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to fetch models: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Fetch current active model config (admin).
+ */
+export async function fetchSystemConfig() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/config', {
+        method: 'GET',
+        headers: { 'x-access-token': currentToken }
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to fetch system config: ${response.statusText}`);
+    return await response.json();
+}
+
+/**
+ * Save model role selections (admin, local mode only).
+ * @param {{ vision?: string, summary?: string, chat?: string, embedding?: string }} cfg
+ */
+export async function saveSystemConfig(cfg) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': currentToken },
+        body: JSON.stringify(cfg)
+    });
+    if (response.status === 401) { logout(); throw new Error("Unauthorized"); }
+    if (!response.ok) throw new Error(`Failed to save system config: ${response.statusText}`);
+    return await response.json();
+}

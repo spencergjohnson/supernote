@@ -51,6 +51,13 @@ LLM_PORT="${LLM_PORT:-8080}"
 LLM_URL="${LLM_URL:-http://${LLM_CONTAINER}:${LLM_PORT}}"
 LLM_MODEL="${LLM_MODEL:-qwen2.5-vl-7b}"        # MUST be vision-capable (OCR)
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-qwen3-embedding-8b}"
+# Optional text-only model for summaries/folders/chat.  Falls back to LLM_MODEL
+# when unset.  Text models don't need vision, so you can use a stronger or faster
+# non-VL model here (add its alias to llama-swap.yaml, then set SUMMARY_MODEL).
+SUMMARY_MODEL="${SUMMARY_MODEL:-}"
+# Optional text-only model specifically for RAG chat.  Falls back to SUMMARY_MODEL
+# then LLM_MODEL.
+CHAT_MODEL="${CHAT_MODEL:-}"
 
 # Tailscale integration. When enabled (and tailscale is installed + logged in),
 # we expose the web UI over HTTPS on your tailnet via `tailscale serve`. This
@@ -216,6 +223,8 @@ docker run -d \
   -e SUPERNOTE_LOCAL_LLM_URL="$LLM_URL" \
   -e SUPERNOTE_LOCAL_LLM_MODEL="$LLM_MODEL" \
   -e SUPERNOTE_LOCAL_EMBEDDING_MODEL="$EMBEDDING_MODEL" \
+  ${SUMMARY_MODEL:+-e SUPERNOTE_LOCAL_SUMMARY_MODEL="$SUMMARY_MODEL"} \
+  ${CHAT_MODEL:+-e SUPERNOTE_LOCAL_CHAT_MODEL="$CHAT_MODEL"} \
   "${PROXY_ENV_ARGS[@]}" \
   "$IMAGE_NAME" >/dev/null
 
@@ -277,7 +286,7 @@ $(printf '\033[1;32m')Supernote Knowledge Hub is running (LOCAL AI mode).$(print
 
   Container : $CONTAINER_NAME
   Data dir  : $DATA_DIR        (DB, config, and synced files live here)
-  Local LLM : $LLM_URL  (chat: $LLM_MODEL, embeddings: $EMBEDDING_MODEL)
+  Local LLM : $LLM_URL  (vision/OCR: $LLM_MODEL, embeddings: $EMBEDDING_MODEL${SUMMARY_MODEL:+, summary: $SUMMARY_MODEL}${CHAT_MODEL:+, chat: $CHAT_MODEL})
   Logs      : docker logs -f $CONTAINER_NAME
 
 --------------------------------------------------------------------------
@@ -323,7 +332,9 @@ Notes
   * The inference server is reached over the shared Docker network '$LLM_NETWORK'
     by DNS name. If '$LLM_CONTAINER' is recreated, re-attach it (its startup
     script should run: docker network connect $LLM_NETWORK $LLM_CONTAINER).
-  * The chat model MUST be vision-capable for OCR (e.g. llava, qwen2.5-vl).
+  * The OCR/vision model (LLM_MODEL) MUST be vision-capable (e.g. qwen2.5-vl).
+  * Summaries and chat use text-only models — set SUMMARY_MODEL / CHAT_MODEL
+    to a faster non-VL model if desired.  Add its alias to llama-swap/llama-swap.yaml.
   * If the host firewall blocks it, allow inbound TCP ${PORT} (and ${MCP_PORT}).
   * To point at a different inference server, re-run with e.g.:
       LLM_CONTAINER=ollama LLM_PORT=11434 LLM_MODEL=llava ./run-local.sh

@@ -88,7 +88,7 @@ class GeminiEmbeddingModule(ProcessorModule):
         if not self.gemini_service.is_configured:
             raise ValueError("Gemini API key not configured")
 
-        model_id = self.config.gemini_embedding_model
+        model_id = self.config.embedding_model_name
         response = await self.gemini_service.embed_content(
             model=model_id,
             contents=text_content,
