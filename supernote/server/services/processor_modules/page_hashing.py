@@ -135,6 +135,10 @@ class PageHashingModule(ProcessorModule):
             # Track which page_ids are present in the current file
             current_page_ids = set()
 
+            # Tracks whether any page was added, changed, or deleted so we know
+            # whether to invalidate the file-level summary task below.
+            content_changed = False
+
             for i in range(total_pages):
                 page_info = metadata.pages[i]
                 page_id = page_info.get("PAGEID")
@@ -168,6 +172,7 @@ class PageHashingModule(ProcessorModule):
                         row.content_hash = current_hash
                         row.text_content = None  # Clear OCR
                         row.embedding = None  # Clear Embedding
+                        content_changed = True
 
                         # Invalidate downstream tasks
                         # Note: Tasks are keyed by page_index usually?
@@ -200,6 +205,7 @@ class PageHashingModule(ProcessorModule):
                         embedding=None,
                     )
                     session.add(new_content)
+                    content_changed = True
 
             # 2. Handle Deletions
             # Any page_id in existing_map but NOT in current_page_ids is deleted
@@ -207,6 +213,7 @@ class PageHashingModule(ProcessorModule):
                 if pid not in current_page_ids:
                     logger.info(f"Page {pid} deleted (was at {row.page_index}).")
                     await session.delete(row)
+                    content_changed = True
 
                     # Cleanup Blobs
                     png_path = get_page_png_path(file_id, pid)
@@ -223,5 +230,20 @@ class PageHashingModule(ProcessorModule):
                         .where(SystemTaskDO.file_id == file_id)
                         .where(SystemTaskDO.key == f"page_{pid}")
                     )
+
+            # 3. Invalidate the file-level summary so it regenerates from fresh OCR.
+            # The summary task is keyed "global" and its run_if_needed() returns False
+            # when it is COMPLETED, so we must delete it here to force a re-run later
+            # in the same pipeline pass (hashing runs before the summary post-module).
+            if content_changed:
+                logger.info(
+                    f"Content changed for file {file_id}; invalidating summary task."
+                )
+                await session.execute(
+                    delete(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
+                    .where(SystemTaskDO.key == "global")
+                )
 
             await session.commit()

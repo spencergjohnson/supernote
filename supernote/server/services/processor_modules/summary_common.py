@@ -109,20 +109,48 @@ def build_transcript_text(
     return "\n\n".join(text_parts)
 
 
+def _extract_json(text: str) -> str:
+    """Strip Markdown code fences and extract the outermost JSON object.
+
+    Handles responses where the model wraps its JSON in ```json ... ``` blocks
+    or surrounds it with prose, which causes plain json.loads to fail.
+    """
+    # Remove ```json ... ``` or ``` ... ``` fences
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        # Drop the opening fence line and the closing fence
+        lines = stripped.splitlines()
+        # Find closing fence
+        end = len(lines)
+        for i in range(len(lines) - 1, 0, -1):
+            if lines[i].strip() == "```":
+                end = i
+                break
+        stripped = "\n".join(lines[1:end]).strip()
+
+    # Slice from first '{' to last '}' to skip any surrounding prose
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start != -1 and end != -1 and end >= start:
+        stripped = stripped[start : end + 1]
+
+    return stripped
+
+
 def parse_summary_response(text: Optional[str], file_id: int) -> ParsedSummary:
     """Parse the LLM JSON response into markdown + structured metadata.
 
-    Tolerates missing fields and invalid JSON; falls back to using the raw
-    text as the segmented summary so partial output is never discarded.
+    Tolerates missing fields, Markdown code fences, and invalid JSON.
+    Falls back to a neutral placeholder so raw JSON is never stored as content.
     """
     if not text:
         return ParsedSummary("No summary generated.", None, None, None)
 
     try:
-        data = json.loads(text)
+        data = json.loads(_extract_json(text))
     except json.JSONDecodeError:
         logger.error(f"Failed to parse JSON summary response for file {file_id}")
-        return ParsedSummary(text, None, None, None)
+        return ParsedSummary("Summary could not be parsed.", None, None, None)
 
     # --- Segments (preserve existing behaviour) ---
     segments_data = data.get("segments", []) or []

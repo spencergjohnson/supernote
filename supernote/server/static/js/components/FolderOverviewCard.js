@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue';
 import { fetchSummaries } from '../api/client.js';
+import { renderMarkdown } from '../utils/markdown.js';
 
 const parseMeta = (raw) => {
     if (!raw) return {};
@@ -52,7 +53,7 @@ export default {
             }
             return text.trim();
         });
-        const formatContent = (text) => (text ? text.replace(/\n/g, '<br/>') : '');
+        const formatContent = (text) => renderMarkdown(text);
 
         return { item, isLoading, collapsed, title, topics, body, formatContent };
     },

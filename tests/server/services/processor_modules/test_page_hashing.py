@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from supernote.models.base import ProcessingStatus
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -213,3 +214,150 @@ async def test_process_with_real_file(
             .all()
         )
         assert len(current_pages) == len(pages)
+
+
+async def test_summary_task_invalidated_on_page_change(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_note_path: Path,
+) -> None:
+    """When a page's content changes, the SUMMARY_GENERATION/global task must be deleted.
+
+    This ensures that the SummaryModule re-runs in the same pipeline pass
+    and generates a fresh summary from the updated OCR text.
+    """
+    if not test_note_path.exists():
+        pytest.skip(f"Test file not found at {test_note_path}")
+
+    file_id = 1100
+    storage_key = "summary_invalidation_key"
+
+    file_content = test_note_path.read_bytes()
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=200,
+                storage_key=storage_key,
+                file_name="invalidation_test.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    # First run — populates pages and marks HASHING COMPLETED.
+    await page_hashing_module.run(file_id, session_manager)
+
+    # Plant a completed SUMMARY_GENERATION/global task to simulate a prior summary run.
+    async with session_manager.session() as session:
+        session.add(
+            SystemTaskDO(
+                file_id=file_id,
+                task_type="SUMMARY_GENERATION",
+                key="global",
+                status=ProcessingStatus.COMPLETED,
+            )
+        )
+        # Corrupt the first page's hash so the next run detects a content change.
+        page = (
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .where(NotePageContentDO.page_index == 0)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert page is not None
+        page.content_hash = "STALE_HASH"
+        await session.commit()
+
+    # Second run — hash mismatch should trigger summary invalidation.
+    await page_hashing_module.process(file_id, session_manager)
+
+    async with session_manager.session() as session:
+        summary_task = (
+            (
+                await session.execute(
+                    select(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
+                    .where(SystemTaskDO.key == "global")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert summary_task is None, (
+            "SUMMARY_GENERATION/global task should be deleted when page content changes"
+        )
+
+
+async def test_summary_task_not_invalidated_when_unchanged(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_note_path: Path,
+) -> None:
+    """When no page content changes, the SUMMARY_GENERATION task is left intact."""
+    if not test_note_path.exists():
+        pytest.skip(f"Test file not found at {test_note_path}")
+
+    file_id = 1101
+    storage_key = "summary_no_invalidation_key"
+
+    file_content = test_note_path.read_bytes()
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=201,
+                storage_key=storage_key,
+                file_name="no_invalidation_test.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    # First run — correct hashes, no change.
+    await page_hashing_module.run(file_id, session_manager)
+
+    # Plant a completed summary task.
+    async with session_manager.session() as session:
+        session.add(
+            SystemTaskDO(
+                file_id=file_id,
+                task_type="SUMMARY_GENERATION",
+                key="global",
+                status=ProcessingStatus.COMPLETED,
+            )
+        )
+        await session.commit()
+
+    # Second run with unchanged file — no content change, summary task should survive.
+    await page_hashing_module.process(file_id, session_manager)
+
+    async with session_manager.session() as session:
+        summary_task = (
+            (
+                await session.execute(
+                    select(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.task_type == "SUMMARY_GENERATION")
+                    .where(SystemTaskDO.key == "global")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert summary_task is not None, (
+            "SUMMARY_GENERATION/global task should be preserved when nothing changed"
+        )
+        assert summary_task.status == ProcessingStatus.COMPLETED

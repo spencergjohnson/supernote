@@ -16,6 +16,10 @@ from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.processor_modules.summary_common import (
+    _extract_json,
+    parse_summary_response,
+)
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 from supernote.server.utils.prompt_loader import PromptId
@@ -306,3 +310,82 @@ async def test_summary_transcript_with_dates(
     assert "--- Page 1 ---" in dto.content
     assert "Page ID: P20231027120000abc" in dto.content
     assert "Page Date (Inferred): 2023-10-27" in dto.content
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _extract_json and parse_summary_response robustness
+# ---------------------------------------------------------------------------
+
+
+def test_extract_json_plain():
+    """Plain JSON object passes through unchanged."""
+    payload = '{"key": "value"}'
+    assert _extract_json(payload) == payload
+
+
+def test_extract_json_strips_markdown_fence():
+    """`````json ... ````` fences are stripped."""
+    payload = '```json\n{"key": "value"}\n```'
+    result = _extract_json(payload)
+    assert json.loads(result) == {"key": "value"}
+
+
+def test_extract_json_strips_plain_fence():
+    """``` ... ``` fences (no language tag) are stripped."""
+    payload = '```\n{"key": "value"}\n```'
+    result = _extract_json(payload)
+    assert json.loads(result) == {"key": "value"}
+
+
+def test_extract_json_strips_surrounding_prose():
+    """Leading and trailing prose around the JSON object is removed."""
+    payload = 'Here is the result:\n{"key": "value"}\nDone.'
+    result = _extract_json(payload)
+    assert json.loads(result) == {"key": "value"}
+
+
+def test_extract_json_fence_and_prose():
+    """Handles code fences combined with surrounding prose."""
+    payload = 'Sure!\n```json\n{"a": 1}\n```\nHope that helps.'
+    result = _extract_json(payload)
+    assert json.loads(result) == {"a": 1}
+
+
+def test_parse_summary_response_fenced_json():
+    """parse_summary_response correctly parses a response wrapped in fences."""
+    valid_payload = {
+        "overview": {
+            "title": "My Note",
+            "summary": "A great note.",
+            "topics": ["work"],
+        },
+        "segments": [
+            {
+                "date_range": "2024-01-01",
+                "summary": "Did stuff",
+                "extracted_dates": ["2024-01-01"],
+                "page_refs": [1],
+            }
+        ],
+    }
+    fenced = f"```json\n{json.dumps(valid_payload)}\n```"
+    result = parse_summary_response(fenced, file_id=1)
+
+    assert "Did stuff" in result.segments_markdown
+    assert result.overview_content is not None
+    assert "A great note." in result.overview_content
+
+
+def test_parse_summary_response_invalid_json_returns_placeholder():
+    """Totally unparseable responses produce a neutral placeholder, not raw JSON."""
+    garbage = "I am sorry, I cannot produce JSON right now."
+    result = parse_summary_response(garbage, file_id=42)
+
+    assert result.segments_markdown == "Summary could not be parsed."
+    assert result.overview_content is None
+
+
+def test_parse_summary_response_none_returns_no_summary():
+    result = parse_summary_response(None, file_id=1)
+    assert result.segments_markdown == "No summary generated."
+    assert result.overview_content is None

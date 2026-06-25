@@ -25,6 +25,7 @@ from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules.summary_common import (
     METADATA_TITLE,
     METADATA_TOPICS,
+    _extract_json,
 )
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import (
@@ -245,10 +246,13 @@ class FolderSummaryService:
         if not text:
             return None, None
         try:
-            data = json.loads(text)
+            data = json.loads(_extract_json(text))
         except json.JSONDecodeError:
-            # Fall back to using raw text as the summary body.
-            return text.strip() or None, None
+            # Fall back to a neutral placeholder rather than storing raw JSON.
+            logger.warning(
+                f"Could not parse folder summary JSON for '{folder_name}'; skipping."
+            )
+            return None, None
 
         title = (data.get("title") or "").strip()
         summary = (data.get("summary") or "").strip()

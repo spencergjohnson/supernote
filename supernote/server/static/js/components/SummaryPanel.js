@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { fetchSummaries } from '../api/client.js';
+import { renderMarkdown } from '../utils/markdown.js';
 
 const parseMeta = (raw) => {
     if (!raw) return {};
@@ -65,11 +66,7 @@ export default {
             return body.trim();
         });
 
-        // Helper to format text (simple line breaks)
-        const formatContent = (text) => {
-            if (!text) return "";
-            return text.replace(/\n/g, '<br/>');
-        };
+        const formatContent = (text) => renderMarkdown(text);
 
         const sourceLabel = (src) => {
             const map = { OCR: 'Transcript', GEMINI: 'Timeline', OVERVIEW: 'Overview', USER: 'Note' };

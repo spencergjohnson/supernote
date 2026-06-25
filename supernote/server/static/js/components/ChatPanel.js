@@ -1,5 +1,6 @@
 import { ref, computed, nextTick } from 'vue';
 import { chat } from '../api/client.js';
+import { renderMarkdown } from '../utils/markdown.js';
 
 export default {
     name: 'ChatPanel',
@@ -86,15 +87,7 @@ export default {
             });
         };
 
-        const formatAnswer = (text) => {
-            if (!text) return '';
-            return text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\n/g, '<br/>');
-        };
+        const formatAnswer = (text) => renderMarkdown(text);
 
         return {
             query, isLoading, error, messages, scopeMode, scopeLabel, effectiveScope,
