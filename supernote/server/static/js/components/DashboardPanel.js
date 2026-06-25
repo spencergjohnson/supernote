@@ -114,10 +114,10 @@ export default {
                                 </ul>
                             </div>
 
-                            <!-- Top tags -->
+                            <!-- Top themes -->
                             <div class="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
-                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Top tags</h3>
-                                <div v-if="stats.topTags.length === 0" class="text-sm text-slate-400 dark:text-slate-500">No tags yet.</div>
+                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Top themes</h3>
+                                <div v-if="stats.topTags.length === 0" class="text-sm text-slate-400 dark:text-slate-500">No themes yet.</div>
                                 <div v-else class="flex flex-wrap gap-2">
                                     <span v-for="t in stats.topTags" :key="t.name"
                                         class="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-sm"

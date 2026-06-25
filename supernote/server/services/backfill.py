@@ -21,6 +21,7 @@ from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.folder_summary import FolderSummaryService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.utils.tasks import update_task_status
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,14 @@ logger = logging.getLogger(__name__)
 # the library is large.  0.5 s is imperceptible for the user but gives the
 # inference server breathing room between calls.
 _BACKFILL_DELAY_SECONDS = 0.5
+
+# Marker task used to record that a note has already been considered by the
+# overview backfill.  Without it, any note that legitimately produces no
+# OVERVIEW row (e.g. too short, or the model omits the overview) would be
+# re-summarized on *every* server restart, hammering the GPU.  Recording the
+# attempt makes the backfill converge after a single pass.
+_BACKFILL_TASK_TYPE = "SUMMARY_BACKFILL"
+_BACKFILL_TASK_KEY = "global"
 
 
 class BackfillService:
@@ -83,7 +92,20 @@ class BackfillService:
                 (await session.execute(has_overview_stmt)).scalars().all()
             )
 
-            candidate_ids = completed_ids - has_overview
+            # Notes the backfill has already attempted (success or no-op).
+            # These must never be re-summarized, even if they still lack an
+            # overview, to avoid GPU work on every restart.
+            attempted_stmt = (
+                select(distinct(SystemTaskDO.file_id))
+                .where(SystemTaskDO.task_type == _BACKFILL_TASK_TYPE)
+                .where(SystemTaskDO.key == _BACKFILL_TASK_KEY)
+                .where(SystemTaskDO.status == ProcessingStatus.COMPLETED)
+            )
+            attempted_ids = set(
+                (await session.execute(attempted_stmt)).scalars().all()
+            )
+
+            candidate_ids = completed_ids - has_overview - attempted_ids
             if not candidate_ids:
                 return 0
 
@@ -108,9 +130,28 @@ class BackfillService:
                 # gate while keeping the failure-safe retry-on-next-startup
                 # behaviour (a crash here leaves the COMPLETED status intact).
                 await self.summary_module.process(file_id, self.session_manager)
+                # Record the attempt so this note is never re-summarized on a
+                # future restart, even if it produced no overview.
+                await update_task_status(
+                    self.session_manager,
+                    file_id,
+                    _BACKFILL_TASK_TYPE,
+                    _BACKFILL_TASK_KEY,
+                    ProcessingStatus.COMPLETED,
+                )
                 count += 1
             except Exception as e:
                 logger.warning(f"Overview backfill failed for file {file_id}: {e}")
+                # Leave a FAILED marker so a transient error can retry next
+                # startup but is still visible/diagnosable.
+                await update_task_status(
+                    self.session_manager,
+                    file_id,
+                    _BACKFILL_TASK_TYPE,
+                    _BACKFILL_TASK_KEY,
+                    ProcessingStatus.FAILED,
+                    str(e),
+                )
             # Pace LLM calls so a large library doesn't flood the inference server
             # at startup.  Backfill already runs in the background, so this only
             # slows down the background task, not the main server.

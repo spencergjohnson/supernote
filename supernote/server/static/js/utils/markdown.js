@@ -31,30 +31,81 @@ function escapeHtml(str) {
 }
 
 /**
- * If `text` looks like a raw JSON blob, try to extract a human-readable string
- * from it (summary, overview.summary, content, body — in that order).
- * Returns the original text unchanged when it is not JSON.
+ * Strip Markdown code fences (```json ... ``` or ``` ... ```) and slice to the
+ * outermost JSON object/array, mirroring the backend `_extract_json` helper.
+ * Returns the original text when no fences/braces are detected.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripJsonFences(text) {
+    let stripped = text.trim();
+    if (stripped.startsWith('```')) {
+        const lines = stripped.split('\n');
+        let end = lines.length;
+        for (let i = lines.length - 1; i > 0; i--) {
+            if (lines[i].trim() === '```') { end = i; break; }
+        }
+        stripped = lines.slice(1, end).join('\n').trim();
+    }
+    return stripped;
+}
+
+/**
+ * Recursively pull a human-readable string out of a parsed JSON value produced
+ * by the summary pipeline (folder/overview/note-timeline shapes).
+ * @param {*} data
+ * @returns {string|null}
+ */
+function readableFromJson(data) {
+    if (data == null) return null;
+    if (typeof data === 'string') return data.trim() || null;
+    if (Array.isArray(data)) {
+        const parts = data.map(readableFromJson).filter(Boolean);
+        return parts.length ? parts.join('\n\n') : null;
+    }
+    if (typeof data !== 'object') return null;
+
+    // Direct human-readable fields, in priority order.
+    const direct = data.summary ?? data.content ?? data.body ?? data.text ?? data.description;
+    if (typeof direct === 'string' && direct.trim()) return direct.trim();
+
+    // Nested overview object (full note summary shape).
+    if (data.overview) {
+        const o = readableFromJson(data.overview);
+        if (o) return o;
+    }
+
+    // Timeline segments (note summary shape).
+    if (Array.isArray(data.segments)) {
+        const segs = data.segments
+            .map((s) => {
+                if (!s) return null;
+                const head = s.date_range ? `## ${s.date_range}\n` : '';
+                const body = (s.summary || '').trim();
+                return body ? head + body : null;
+            })
+            .filter(Boolean);
+        if (segs.length) return segs.join('\n\n');
+    }
+
+    return null;
+}
+
+/**
+ * If `text` looks like a raw JSON blob (optionally wrapped in code fences), try
+ * to extract a human-readable string from it. Returns the original text
+ * unchanged when it is not JSON.
  * @param {string} text
  * @returns {string}
  */
 function sanitizeRawJson(text) {
-    const trimmed = text.trim();
-    if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return text;
+    const candidate = stripJsonFences(text);
+    if (!(candidate.startsWith('{') || candidate.startsWith('['))) return text;
     try {
-        const data = JSON.parse(trimmed);
+        const data = JSON.parse(candidate);
         if (typeof data !== 'object' || data === null) return text;
-        // Prefer the most useful human-readable field
-        const candidates = [
-            data.summary,
-            data.overview?.summary,
-            data.content,
-            data.body,
-            data.text,
-        ];
-        for (const c of candidates) {
-            if (typeof c === 'string' && c.trim()) return c.trim();
-        }
-        return '(Summary not available)';
+        const readable = readableFromJson(data);
+        return readable || '(Summary not available)';
     } catch {
         return text;
     }

@@ -17,7 +17,8 @@ export default {
         const pages = ref([]);
         const isLoading = ref(false);
         const error = ref(null);
-        const showDetails = ref(false);
+        // Auto-open the AI Insights panel when viewing a note.
+        const showDetails = ref(true);
 
         const loadPages = async () => {
             if (!props.file) return;

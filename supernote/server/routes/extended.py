@@ -4,6 +4,7 @@ These are for APIs that are not part of the standard API offering, specific
 to our new server.
 """
 
+import json
 import logging
 from collections import Counter
 
@@ -381,13 +382,14 @@ async def handle_dashboard(request: web.Request) -> web.Response:
                 )
             ).all()
 
-            # Tags across the user's summaries.
+            # Themes/topics (and any legacy comma-separated tags) across the
+            # user's summaries. Topics live in the structured ``extra_metadata``
+            # JSON written by the summary pipeline; plain ``tags`` predate it.
             tag_rows = (
                 await session.execute(
-                    select(SummaryDO.tags)
+                    select(SummaryDO.tags, SummaryDO.extra_metadata)
                     .where(SummaryDO.user_id == user_id)
                     .where(SummaryDO.is_deleted.is_(False))
-                    .where(SummaryDO.tags.isnot(None))
                 )
             ).all()
     except Exception as err:
@@ -419,13 +421,23 @@ async def handle_dashboard(request: web.Request) -> web.Response:
     ]
 
     tag_counter: Counter[str] = Counter()
-    for (tags,) in tag_rows:
-        if not tags:
-            continue
-        for tag in tags.split(","):
-            tag = tag.strip()
-            if tag:
-                tag_counter[tag] += 1
+    for tags, extra_metadata in tag_rows:
+        # Legacy comma-separated tags.
+        if tags:
+            for tag in tags.split(","):
+                tag = tag.strip()
+                if tag:
+                    tag_counter[tag] += 1
+        # Structured topics/themes stored in the summary's extra_metadata JSON.
+        if extra_metadata:
+            try:
+                topics = json.loads(extra_metadata).get("topics") or []
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                topics = []
+            for topic in topics:
+                topic = str(topic).strip()
+                if topic:
+                    tag_counter[topic] += 1
     top_tags = [
         TagCountVO(name=name, count=count) for name, count in tag_counter.most_common(12)
     ]
